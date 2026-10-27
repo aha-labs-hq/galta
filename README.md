@@ -1,6 +1,6 @@
 # Galta
 
-Galta is a canvas that opens beside the web page you are browsing. Drag
+Galta is an AI infinite canvas that opens beside the web page you are browsing. Drag
 references in, draw, point at what you mean, and ask. An agent reads the whole
 canvas and the page you bound to it, then works on the canvas through Galta's
 MCP tools.
