@@ -30,8 +30,8 @@ release was built from.
 
 ## Contributing
 
-Issues are welcome. Pull requests are not accepted; a bot closes them. See
-[CONTRIBUTING.md](CONTRIBUTING.md), and report security problems privately as
+Issues are welcome from everyone. Pull requests are accepted from members of
+the Aha Labs organization; a bot closes others. See [CONTRIBUTING.md](CONTRIBUTING.md), and report security problems privately as
 [SECURITY.md](SECURITY.md) describes.
 
 ## Building from source
