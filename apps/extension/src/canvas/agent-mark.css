@@ -1,0 +1,21 @@
+/* The agent's light around a change, in the dock's own light: a pale line on
+   a mid-tone wash traces the outline, holds while the reader finds it, and
+   fades. A faint tint lifts the area without hiding the artwork. */
+/* The canvas's decoration layer, shared with the reveal in canvas-presentation.css. */
+.agent-mark { position: absolute; z-index: 1; overflow: visible; pointer-events: none; }
+.agent-mark rect { rx: var(--radius-control); }
+.agent-mark-life { animation: agent-mark-life var(--motion-mark) linear forwards; }
+.agent-mark-tint { fill: var(--agent-light-wash); opacity: .08; }
+.agent-mark-wash, .agent-mark-line { fill: none; stroke-linecap: round; stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: agent-mark-draw var(--motion-mark-draw) var(--ease-sheet) forwards; }
+.agent-mark-wash { stroke: var(--agent-light-wash); stroke-width: var(--agent-light-band); opacity: .85; }
+.agent-mark-line { stroke: var(--agent-light-line); stroke-width: var(--agent-light-stroke); }
+@keyframes agent-mark-draw { to { stroke-dashoffset: 0; } }
+@keyframes agent-mark-life { 0% { opacity: 0; } 5% { opacity: 1; } 65% { opacity: 1; } 100% { opacity: 0; } }
+/* Without motion the outline appears whole; it still fades, so it never stays. */
+@media (prefers-reduced-motion: reduce) {
+  .agent-mark-wash, .agent-mark-line { animation: none; stroke-dashoffset: 0; }
+}
+@media (forced-colors: active) {
+  .agent-mark-line { stroke: Highlight; }
+  .agent-mark-tint, .agent-mark-wash { display: none; }
+}

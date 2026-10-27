@@ -1,0 +1,14 @@
+/* The arrow that takes the reader to the agent's work, in the ink around it. */
+.agent-locate { flex: 0 0 auto; color: var(--muted-foreground); animation: agent-locate-in var(--motion-panel) var(--ease-sheet); }
+.agent-locate:hover { color: var(--foreground); }
+.agent-locate-glyph { width: var(--icon-small); height: var(--icon-small); overflow: visible; fill: currentColor; transition: rotate var(--motion-panel) var(--ease-out); }
+.agent-locate :is(.agent-locate-arrow, .agent-locate-point) { transform-box: fill-box; transform-origin: center; transition: opacity var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out); }
+.agent-locate[data-away=true] .agent-locate-point, .agent-locate[data-away=false] .agent-locate-arrow { opacity: 0; transform: scale(.6); }
+@keyframes agent-locate-in { from { opacity: 0; transform: scale(.7); } }
+/* In the transcript the arrow waits for the reader's pointer or focus. */
+.conversation-activity { position: relative; }
+.conversation-activity > .agent-locate { position: absolute; top: 0; right: 0; opacity: 0; transition: opacity var(--motion-fast) var(--ease-out); }
+.conversation-activity:is(:hover, :focus-within) > .agent-locate { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .agent-locate, .agent-locate-glyph, .agent-locate :is(.agent-locate-arrow, .agent-locate-point) { animation: none; transition: none; }
+}

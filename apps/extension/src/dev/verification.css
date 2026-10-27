@@ -1,0 +1,9 @@
+/* A stand-in for the source website beside the canvas. It borrows the app's
+   interface tokens so the fixture looks like a real page and cannot drift into
+   a second theme that later reads as product styling. */
+body { display: flex; }
+#test-source { width: 240px; flex-shrink: 0; padding: var(--space-6); background: var(--surface); border-right: 1px solid var(--border); color: var(--foreground); font: var(--text-ui)/var(--leading-ui) var(--font-ui); }
+#test-source h1 { font-size: var(--text-body); }
+#test-source input { width: 100%; padding: var(--space-2); border: 1px solid var(--border-strong); border-radius: var(--radius-control); background: var(--surface); color: inherit; font: inherit; }
+#test-source img { display: block; width: 180px; height: 270px; margin-top: var(--space-6); }
+#root { min-width: 0; flex: 1; }

@@ -1,0 +1,363 @@
+.conversation-dock { isolation: isolate; container: conversation / inline-size; transition: transform var(--motion-panel) var(--ease-out); }
+.conversation-dock.is-dragging { transition: none; will-change: transform; }
+/* A compact dock is a single line, not a collapsed reading surface: a connection
+   prompt, an external agent's activity line. `container-type: inline-size` makes
+   the dock's own intrinsic width zero, so an absolutely positioned compact dock
+   would have nothing to size against; the reading surface's container queries do
+   not apply to that single line, so the containment goes with them. */
+.conversation-dock.connection-only { container-type: normal; width: max-content; }
+.conversation-scroll { overflow-anchor: none; scrollbar-gutter: stable; }
+/* The reading sheet slides out of the composer and settles back into it, and
+   disclosures unfold the same way: `Unfold` moves the frame's height from the
+   height on screen, so either motion reverses midway. The sheet's glass keeps
+   full strength at every height; fading a backdrop filter lets the sharp
+   artwork show through the text. */
+.conversation-presence { overflow: hidden; border-radius: var(--radius-dock) var(--radius-dock) 0 0; --unfold-enter: var(--motion-sheet); --unfold-enter-ease: var(--ease-sheet); --unfold-exit: var(--motion-sheet-exit); --unfold-exit-ease: var(--ease-settle); }
+.conversation-presence[data-state=closed] { pointer-events: none; }
+/* `flow-root` keeps child margins inside the frame's height, and the clip
+   margin leaves room for focus rings. */
+:is(.conversation-process, .conversation-activity) > [data-slot=collapsible-content] { display: flow-root; overflow: clip; overflow-clip-margin: var(--focus-width); --unfold-enter: var(--motion-disclosure); --unfold-enter-ease: var(--ease-sheet); --unfold-exit: var(--motion-disclosure-exit); --unfold-exit-ease: var(--ease-settle); }
+.conversation-status-change { animation: conversation-detail var(--motion-fast) var(--ease-out); }
+.conversation-status-viewport { display: inline-block; min-width: 0; max-width: min(48ch, 100%); height: 1rem; flex: 1 1 auto; overflow: hidden; vertical-align: baseline; line-height: 1rem; }
+.conversation-status-viewport.conversation-status-change { animation: none; }
+.conversation-status-track { position: relative; display: grid; height: 100%; min-width: 0; min-height: 1rem; align-items: center; }
+.conversation-status-line {
+  grid-area: 1 / 1;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(0);
+}
+.conversation-status-line:first-child { position: absolute; inset: 0; opacity: 0; }
+.conversation-status-line:last-child { opacity: 1; }
+.conversation-status-track[data-rolling=true] .conversation-status-line:first-child { animation: conversation-status-shimmer-out var(--motion-status) var(--ease-out) both; }
+.conversation-status-track[data-rolling=true] .conversation-status-line:last-child { animation: conversation-status-shimmer-in var(--motion-status) var(--ease-out) both; }
+/* Shimmer is a readable text handoff: the line enters softened and resolves
+   into the same ink. There is no highlight layer and no repeating sweep. */
+.conversation-text-shimmer {
+  display: inline-block;
+  animation: conversation-text-shimmer-in var(--motion-shimmer) var(--ease-out) both;
+}
+.conversation-dock .transition-transform { transition-duration: var(--motion-disclosure); transition-timing-function: var(--ease-sheet); }
+@keyframes conversation-detail { from { opacity: 0; } to { opacity: 1; } }
+@keyframes conversation-status-shimmer-out {
+  from { opacity: 1; filter: blur(0); transform: translateY(0); }
+  48% { opacity: .56; filter: blur(1.8px); transform: translateY(-.03em); }
+  to { opacity: 0; filter: blur(4px); transform: translateY(-.12em); }
+}
+@keyframes conversation-status-shimmer-in {
+  from { opacity: 0; filter: blur(4px); transform: translateY(.12em); }
+  48% { opacity: .76; filter: blur(1.8px); transform: translateY(.03em); }
+  to { opacity: 1; filter: blur(0); transform: translateY(0); }
+}
+@keyframes conversation-text-shimmer-in {
+  from { opacity: 0; filter: blur(4px); transform: translateY(.12em); }
+  48% { opacity: .76; filter: blur(1.8px); transform: translateY(.03em); }
+  to { opacity: 1; filter: blur(0); transform: translateY(0); }
+}
+.composer-enable { gap: var(--space-3); padding-inline: var(--space-4); color: var(--foreground); }
+.composer-enable svg { width: var(--icon-small); height: var(--icon-small); color: var(--muted-foreground); }
+
+/* One shape for the parallel-work count, in the two surfaces that report it.
+   Only the surface color differs; geometry and numerals are shared. */
+.session-count { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.composer-active-summary { color: var(--muted-foreground); }
+.session-active-summary { color: var(--muted-foreground); }
+.composer-submit-face {
+  transition: transform var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out);
+}
+.composer-submit:active:not(:disabled) .composer-submit-face { transform: scale(.94); }
+/* Status and actions own the footer; the centered drag grip sits on the surface
+   edge, outside this grid, so it does not distort the footer's rhythm. */
+.composer-footer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1); align-items: center; }
+.composer-conversation-slot { display: flex; min-width: 0; align-items: center; gap: 2px; }
+/* The agent's own words are the closed footer's main line; elapsed time and
+   the chevron stay in supporting ink. */
+.conversation-title[data-narration] { color: color-mix(in srgb, var(--foreground) 90%, transparent); }
+.composer-footer-actions { min-width: 0; justify-content: flex-end; }
+/* Keep the input row aligned with the footer; the grip owns no layout column. */
+.composer-input-row { position: relative; z-index: 1; }
+.composer-input::placeholder { color: var(--muted-foreground); opacity: 1; }
+/* Matching path commands let Chromium interpolate the small glyph without a JS loop. */
+.composer-send-glyph path {
+  d: path('M12 4 L20 12 L14 12 L14 20 L10 20 L10 12 L4 12 Z');
+  transition: d var(--motion-panel) var(--ease-out);
+}
+.composer-submit[data-action=stop] .composer-send-glyph path {
+  d: path('M12 6 L18 6 L18 12 L18 18 L6 18 L6 12 L6 6 Z');
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-submit:active:not(:disabled) .composer-submit-face { transform: none; }
+  .composer-send-glyph path { transition: none; }
+}
+/* The composer slides horizontally along its bottom edge. Keep the grip on the
+   edge itself so its hit area never covers the input row. */
+.composer-resize-handle {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  z-index: 2;
+  width: 48px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  transform: translateX(-50%);
+  cursor: grab;
+  touch-action: pan-y;
+  color: var(--muted-foreground);
+  outline: none;
+}
+.composer-resize-glyph { width: 24px; height: 3px; border-radius: var(--radius-round); background: currentColor; opacity: .24; transform: scale(.92); transition: opacity var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out); }
+.composer-resize-handle:hover .composer-resize-glyph { opacity: .56; transform: scale(1); }
+.composer-resize-handle:hover { color: var(--foreground); }
+.composer-resize-handle:focus-visible { background-color: transparent; box-shadow: 0 0 0 1px color-mix(in srgb, var(--foreground) 24%, transparent); outline: none; }
+.composer-resize-handle:active { cursor: grabbing; }
+@media (forced-colors: active) {
+  .composer-resize-handle:focus-visible { outline: 2px solid Highlight; outline-offset: -2px; }
+}
+
+/* One translucent plane softens the artwork; text, bubbles and disclosures
+   live above it without stacking backdrop filters. The white wash is
+   deliberately directional: the eye gets a quiet top-light and a slightly
+   denser lower edge, so the surface reads as glass even when the canvas below
+   is mostly white. */
+.conversation-presence {
+  background-image: var(--glass-wash);
+  background-color: var(--glass-base);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  /* Elevation only: the sheet draws its own edge on its top and sides, and
+     its lower edge is the seam with the composer, which carries no line. */
+  box-shadow: var(--glass-elevation);
+}
+.conversation-sheet {
+  border: 1px solid var(--glass-edge);
+  border-bottom: 0;
+  border-radius: var(--radius-dock) var(--radius-dock) 0 0;
+  background: var(--glass-sheet-wash);
+  box-shadow: none;
+}
+.conversation-header {
+  position: relative;
+  min-height: 58px;
+  padding: 9px 12px;
+  border-bottom: 0;
+  background: var(--glass-header-wash);
+  box-shadow: var(--glass-header-shadow);
+}
+.conversation-header::after {
+  position: absolute;
+  right: 16px;
+  bottom: 0;
+  left: 16px;
+  height: 1px;
+  background: var(--glass-rule);
+  content: '';
+  pointer-events: none;
+}
+.conversation-scroll { flex: 1 1 auto; padding: var(--space-6); }
+/* Match both visibility states so shared button transitions cannot replace
+   the exit fade. */
+.conversation-jump-latest[data-visible] {
+  position: absolute;
+  z-index: 1;
+  bottom: var(--space-3);
+  left: 50%;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 18%, transparent);
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgb(30 30 30 / .1);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 6px) scale(.94);
+  transition: opacity var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out), visibility var(--motion-fast) step-end;
+}
+.conversation-jump-latest[data-visible=true] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translate(-50%, 0) scale(1);
+  transition: opacity var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out), visibility 0s;
+}
+.conversation-turn + .conversation-turn { margin-block-start: var(--space-8); }
+.conversation-user {
+  width: fit-content;
+  max-width: 88%;
+  margin-inline-start: auto;
+  padding: 10px 15px;
+  border: 1px solid color-mix(in oklab, var(--border) 62%, transparent);
+  border-radius: 18px 18px 5px 18px;
+  background: linear-gradient(145deg in oklab, color-mix(in oklab, var(--surface) 76%, var(--surface-hover)), color-mix(in oklab, var(--surface-hover) 80%, var(--surface)));
+  box-shadow: 0 1px 2px #00000003, inset 0 1px 0 color-mix(in oklab, var(--surface) 80%, transparent);
+  color: var(--foreground);
+  font-size: .9375rem;
+  line-height: var(--leading-reading);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.conversation-followup { margin-block-start: var(--space-5); }
+:is(.conversation-reply, .conversation-commentary) { margin-block-start: var(--space-5); }
+.conversation-process + .conversation-reply { margin-block-start: var(--space-2); }
+.conversation-reply .conversation-assistant { font-size: .9375rem; line-height: var(--leading-reading); }
+.conversation-commentary { color: var(--muted-foreground); }
+.conversation-commentary .conversation-assistant { font-size: .875rem; line-height: var(--leading-reading); }
+.conversation-process { margin-block-start: var(--space-3); }
+.conversation-process-trigger { height: var(--target-compact); min-height: var(--target-compact); border-radius: var(--radius-control); }
+.conversation-process-meta { display: flex; min-width: 0; flex: 0 1 auto; align-items: baseline; gap: var(--space-1); line-height: 1rem; }
+.conversation-process-meta .conversation-status-viewport { flex: 0 1 auto; max-width: none; }
+.conversation-process-count { line-height: 1rem; }
+.conversation-process-trigger:hover { color: var(--foreground); }
+.conversation-process-items { border-inline-start: 1px solid var(--border); margin-block: var(--space-2); padding-inline-start: var(--space-3); }
+.conversation-process-message { margin-block: var(--space-2) var(--space-3); padding-inline-start: var(--space-1); }
+.conversation-process-message .conversation-assistant { font-size: .875rem; line-height: var(--leading-reading); }
+.conversation-activity + .conversation-activity { margin-block-start: 2px; }
+/* Where earlier context was condensed: the words sit on the reading column's
+   start and a hairline carries on to its end, in the sheet's own rule. */
+.conversation-boundary { display: flex; align-items: center; gap: var(--space-3); margin-block: var(--space-3); }
+.conversation-boundary::after { content: ''; flex: 1; block-size: 1px; background: var(--glass-rule); }
+.conversation-activity-details { margin-inline-start: var(--space-5); margin-block: var(--space-1) var(--space-3); padding: var(--space-3); border-radius: var(--radius-control); background: color-mix(in oklab, var(--field) 80%, transparent); color: var(--muted-foreground); }
+.conversation-activity-details pre { scrollbar-width: thin; }
+.conversation-reasoning .conversation-assistant { font-size: .875rem; line-height: var(--leading-reading); }
+.conversation-turn:focus-visible, .conversation-reply:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; border-radius: var(--radius-control); }
+@media (prefers-contrast: more) {
+  .conversation-presence { background: var(--surface); backdrop-filter: none; }
+  .conversation-user { border-color: var(--border-strong); }
+  .conversation-jump-latest[data-visible] { border-color: var(--border-strong); box-shadow: none; }
+  .conversation-scroll { scrollbar-color: var(--foreground) transparent; }
+  .conversation-text-shimmer,
+  .conversation-status-track[data-rolling=true] .conversation-status-line:first-child,
+  .conversation-status-track[data-rolling=true] .conversation-status-line:last-child { animation: none; }
+}
+@media (forced-colors: active) {
+  .conversation-sheet, .conversation-user, .conversation-jump-latest[data-visible] { background: Canvas; border-color: CanvasText; }
+  .conversation-presence { background: Canvas; backdrop-filter: none; }
+  .conversation-text-shimmer,
+  .conversation-status-track[data-rolling=true] .conversation-status-line:first-child,
+  .conversation-status-track[data-rolling=true] .conversation-status-line:last-child { animation: none; }
+}
+.conversation-header-primary { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; overflow: hidden; }
+.conversation-header-actions { margin-inline-start: 6px; gap: 3px; padding: 2px; border-radius: 11px; background: rgb(255 255 255 / .24); box-shadow: inset 0 1px 0 rgb(255 255 255 / .42); }
+.conversation-session-tools { min-width: 0; flex: 1 1 auto; gap: 8px; }
+.conversation-session-trigger {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 32px;
+  flex: 1 1 auto;
+  overflow: hidden;
+  justify-content: flex-start;
+  text-align: start;
+  padding-inline: 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--foreground);
+  transition: background-color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+}
+.conversation-session-trigger:hover { background: rgb(255 255 255 / .42); color: var(--foreground); }
+button.conversation-session-trigger:focus-visible { border-color: rgb(120 120 120 / .38); background-color: rgb(255 255 255 / .62); box-shadow: 0 0 0 2px rgb(100 100 100 / .12), inset 0 1px 0 rgb(255 255 255 / .82); }
+.conversation-session-trigger[data-state=open] { border-color: rgb(90 90 90 / .24); background: rgb(255 255 255 / .68); color: var(--foreground); box-shadow: inset 0 1px 0 rgb(255 255 255 / .88), 0 2px 6px rgb(30 30 30 / .07); }
+.conversation-session-trigger:active { transform: scale(.985); }
+.conversation-session-trigger > svg:first-child { color: color-mix(in srgb, var(--foreground) 54%, transparent); }
+.session-current-label { flex: 1 1 auto; font-weight: 560; color: var(--foreground); }
+.conversation-session-actions { flex: 0 0 auto; gap: 2px; margin-inline-end: 0; padding: 2px; border-radius: 11px; background: rgb(255 255 255 / .24); box-shadow: inset 0 1px 0 rgb(255 255 255 / .42); }
+.conversation-session-actions [data-slot=button], .conversation-header-actions [data-slot=button] { border-radius: 9px; transition: background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out); }
+.conversation-session-actions [data-slot=button]:hover, .conversation-header-actions [data-slot=button]:hover { background: rgb(255 255 255 / .38); color: var(--foreground); }
+.conversation-session-actions [data-slot=button]:focus-visible, .conversation-header-actions [data-slot=button]:focus-visible { background: rgb(255 255 255 / .46); box-shadow: 0 0 0 2px rgb(100 100 100 / .12); }
+.conversation-session-actions [data-slot=button]:active, .conversation-header-actions [data-slot=button]:active { transform: scale(.94); }
+.conversation-name-status { color: var(--muted-foreground); }
+.conversation-name-popover { color: var(--foreground); }
+.conversation-requests { color: var(--muted-foreground); }
+.conversation-requests:hover { color: var(--foreground); background: rgb(255 255 255 / .42); }
+.request-count, .request-index-count { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; border-radius: var(--radius-round); background: color-mix(in srgb, var(--surface-hover) 76%, transparent); color: var(--muted-foreground); font-size: 11px; font-variant-numeric: tabular-nums; }
+.request-index-heading { display: flex; align-items: center; justify-content: space-between; padding: 3px 8px 8px; color: var(--foreground); font-size: 12px; font-weight: 500; }
+.request-index-search { background: color-mix(in srgb, var(--field) 88%, transparent); border-color: transparent; }
+.request-index-list { margin-inline: -2px; }
+.request-index-row { border-radius: var(--radius-control); transition: background var(--motion-fast) var(--ease-out); }
+.request-index-row:hover { background: color-mix(in srgb, var(--surface-hover) 64%, transparent); }
+.request-index-trigger { min-height: 48px; }
+.request-index-number { width: 22px; color: var(--muted-foreground); }
+.request-index-copy { display: block; min-width: 0; }
+.request-index-prompt { color: var(--foreground); }
+.request-index-status { display: flex; align-items: center; gap: 5px; margin-top: 3px; color: var(--muted-foreground); font-size: 11px; }
+.request-index-status-icon { width: 12px; height: 12px; flex: 0 0 auto; stroke-width: 1.75; }
+.conversation-collapse { margin-inline-start: 2px; border-radius: var(--radius-control); color: var(--muted-foreground); }
+.conversation-collapse:hover { color: var(--foreground); background: var(--surface-hover); }
+.session-menu { scrollbar-gutter: stable; }
+.session-menu [role=menuitemradio] { min-height: 48px; align-items: flex-start; border-radius: var(--radius-control); padding-block: 7px; transition: background var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out); }
+.session-menu [role=menuitemradio][data-state=checked] { background: var(--menu-selected); box-shadow: none; }
+.session-menu [role=menuitemradio][data-status] > span:last-child { opacity: 0; }
+.session-menu [role=menuitemradio][data-highlighted] { background: var(--menu-hover); }
+.session-menu [role=menuitemradio]:active { transform: scale(.99); }
+.session-menu-title { color: var(--foreground); line-height: 1.25; }
+.session-menu-preview { margin-top: 2px; color: var(--muted-foreground); line-height: 1.35; }
+.session-menu-meta { position: absolute; top: 50%; right: 8px; display: grid; width: 16px; height: 16px; place-items: center; color: var(--accent-indicator); pointer-events: none; transform: translateY(-50%); }
+.session-menu-meta-error { color: var(--destructive); }
+.session-menu-status-icon { width: 13px; height: 13px; stroke-width: 1.75; }
+.session-menu [role=menuitemradio] > span:last-child { top: 50%; color: var(--muted-foreground); transform: translateY(-50%); }
+
+/* The list yields height first, so Effort and connection actions stay
+   reachable above the composer. Material and controls use shared tokens. */
+.runtime-menu > :not(.runtime-model-section) { flex-shrink: 0; }
+/* Padding keeps complete labels clear of the short masked scroll edges. */
+.runtime-model-list { max-height: min(calc(var(--target-compact) * 8), 38dvh); padding-block: var(--space-2); scroll-padding-block: var(--space-2); -webkit-mask-image: var(--runtime-menu-list-mask); mask-image: var(--runtime-menu-list-mask); scrollbar-color: var(--border-strong) transparent; scrollbar-width: thin; }
+.runtime-menu-cue { display: inline-flex; width: var(--target-compact); flex-shrink: 0; justify-content: center; }
+.runtime-agent-icon { display: block; width: var(--icon-model); height: var(--icon-model); flex: 0 0 auto; }
+/* Mask the local monochrome SVG so its ink inherits the surrounding text color,
+   including the dark composer scope. An external SVG image cannot inherit it. */
+.runtime-agent-mark { background-color: currentColor; mask-size: contain; mask-position: center; mask-repeat: no-repeat; }
+.runtime-agent-icon-fallback svg { width: 100%; height: 100%; }
+.runtime-usage-track { height: var(--runtime-usage-stroke); }
+.runtime-usage-meter:is(:hover, :focus-visible) .runtime-usage-label > span { color: inherit; }
+
+/* Component queries keep the header coherent when the dock is narrowed by its
+   host panel, even when the outer browser viewport is wide. */
+@container conversation (max-width: 620px) {
+  .conversation-scroll { padding: var(--space-5) var(--space-4); }
+  .conversation-user { max-width: 92%; padding: 9px 13px; }
+  .conversation-header { min-height: 52px; padding-inline: 8px; }
+  .conversation-header-actions { margin-inline-start: 2px; }
+  .conversation-session-tools { gap: 4px; }
+  .conversation-session-trigger { padding-inline: 7px; border-radius: 9px; }
+  .session-active-summary, .composer-active-summary { max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conversation-header-actions { gap: 2px; }
+  .conversation-session-actions { gap: 0; }
+  .conversation-requests { gap: 0; }
+  .conversation-requests .request-label { display: none; }
+}
+
+/* Radix keeps these transient surfaces in the DOM for their close animation.
+   @starting-style gives them a single, native CSS entry state while the
+   existing data-state animation remains the fallback for older engines. */
+@supports (transition-behavior: allow-discrete) {
+  :is(.session-menu, .runtime-menu, .request-index-popover) {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    transition: opacity var(--motion-panel) var(--ease-out), transform var(--motion-panel) var(--ease-out), display var(--motion-panel) allow-discrete;
+    transition-behavior: allow-discrete;
+  }
+  :is(.session-menu, .runtime-menu, .request-index-popover)[data-state=closed] {
+    opacity: 0;
+    transform: translateY(4px) scale(.985);
+    pointer-events: none;
+  }
+  @starting-style {
+    :is(.session-menu, .runtime-menu, .request-index-popover)[data-state=open] {
+      opacity: 0;
+      transform: translateY(4px) scale(.985);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-dock { transition: none; }
+  .conversation-jump-latest[data-visible] { transition: none; transform: translateX(-50%); }
+  .conversation-status-change, .conversation-status-track[data-rolling=true], .conversation-status-track[data-rolling=true] .conversation-status-line:first-child, .conversation-status-track[data-rolling=true] .conversation-status-line:last-child, .conversation-text-shimmer { animation: none; }
+  :is(.session-menu, .runtime-menu, .request-index-popover) { transition: none; transform: none; }
+}
+
+.external-agent-activity { display: flex; align-items: center; gap: 16px; padding-left: 12px; font-size: 13px; }
+.external-agent-activity > span { min-width: 0; overflow-wrap: anywhere; display: flex; align-items: center; gap: 8px; }

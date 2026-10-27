@@ -1,0 +1,9 @@
+{
+  "channel": "beta",
+  "build": 1,
+  "extensionId": "REPLACE_WITH_VERIFIED_STORE_ID",
+  "extensionPublicKey": "REPLACE_WITH_STORE_PUBLIC_KEY",
+  "downloadUrl": "https://YOUR_DOMAIN/download",
+  "appcastUrl": "https://YOUR_DOMAIN/updates/beta/appcast.xml",
+  "updatePublicKey": "REPLACE_WITH_SPARKLE_ED25519_PUBLIC_KEY"
+}

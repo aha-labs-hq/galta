@@ -1,0 +1,21 @@
+{
+  "name": "galta",
+  "version": "0.1.0",
+  "description": "Create and understand editable visual work in your live Galta canvas.",
+  "author": {
+    "name": "Galta"
+  },
+  "interface": {
+    "displayName": "Galta",
+    "shortDescription": "Work with your live Galta canvas.",
+    "longDescription": "Connect to an open Galta canvas to inspect images, arrange editable objects and build visual work, and generate images, video and speech with the provider account you connected in Galta. Requires the local Galta canvas bridge.",
+    "developerName": "Galta",
+    "category": "Productivity",
+    "capabilities": [],
+    "composerIcon": "./assets/composer-icon.svg",
+    "defaultPrompt": "Help me use Galta.",
+    "logo": "./assets/logo.svg",
+    "logoDark": "./assets/logo-dark.svg"
+  },
+  "mcpServers": "./.mcp.json"
+}

@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/canvas" },
+    { "path": "packages/domain" },
+    { "path": "packages/runtime" },
+    { "path": "packages/capture" },
+    { "path": "packages/storage" },
+    { "path": "apps/extension" }
+  ]
+}

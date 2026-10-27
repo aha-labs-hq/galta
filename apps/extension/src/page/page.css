@@ -1,0 +1,5 @@
+.page-preview { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100dvh; background: var(--background); }
+.page-preview-bar { display: flex; align-items: center; justify-content: space-between; min-height: calc(var(--target) + var(--space-4)); padding: var(--space-2) var(--space-4); border-bottom: var(--stroke-surface) solid var(--border); }
+.page-preview-bar h1 { margin: 0; font: 500 var(--text-ui)/var(--leading-ui) var(--font-ui); color: var(--muted-foreground); }
+.page-preview > iframe { border: none; min-height: 0; }
+.page-preview-notice { align-self: center; justify-self: center; max-width: 400px; padding: var(--space-6); color: var(--muted-foreground); font-size: var(--text-ui); line-height: var(--leading-reading); text-align: center; }

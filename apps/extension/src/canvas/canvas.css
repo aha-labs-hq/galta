@@ -1,0 +1,105 @@
+:root { color: var(--foreground); background: var(--background); font-family: var(--font-ui); }
+* { box-sizing: border-box; }
+html, body, #root { width: 100%; height: 100%; margin: 0; }
+html, body { overflow: hidden; }
+.galta-loading, .galta-error { display: grid; width: 100%; height: 100%; place-items: center; color: var(--muted-foreground); background: var(--background); }
+
+/* The shared Glass material comes from the primitive. The picker adds readable
+   names, small artwork previews and one quiet current marker. The list owns
+   long scrolling; the outer surface also scrolls in short windows. */
+.workspace-menu-header { padding: 0 var(--space-2) var(--space-2); }
+.workspace-menu-title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.workspace-menu-heading { min-width: 0; margin: 0; color: var(--foreground); font-size: var(--text-ui); font-weight: 500; line-height: var(--leading-ui); }
+.workspace-new-action { gap: var(--space-1); margin-inline-end: calc(-1 * var(--space-2)); color: var(--muted-foreground); }
+.workspace-new-action:hover { color: var(--foreground); }
+.workspace-search-field { display: flex; min-width: 0; min-height: var(--target-compact); align-items: center; gap: var(--space-2); margin-top: var(--space-2); padding-inline: var(--space-2); border-radius: var(--radius-control); background: var(--field); color: var(--muted-foreground); transition: background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out); }
+.workspace-search-field:focus-within { background: var(--surface-hover); color: var(--foreground); }
+.workspace-menu .workspace-search-input { height: var(--target-compact); min-width: 0; flex: 1 1 auto; padding-inline: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--foreground); font-size: var(--text-ui); }
+.workspace-menu .workspace-search-input:focus-visible { background: transparent; box-shadow: none; }
+.workspace-search-input::placeholder { color: var(--muted-foreground); opacity: 1; }
+.workspace-search-clear { color: var(--muted-foreground); }
+.workspace-search-clear:hover { color: var(--foreground); }
+.workspace-menu-list { scrollbar-color: var(--border-strong) transparent; scrollbar-width: thin; }
+.workspace-canvas-item { min-height: calc(var(--target-compact) + var(--space-6)); align-items: center; padding: var(--space-2); border: 0; border-radius: var(--radius-control); color: var(--foreground); text-align: start; }
+.workspace-canvas-item:hover { background: var(--menu-hover); }
+.workspace-canvas-item.is-current { background: var(--menu-selected); box-shadow: none; }
+.workspace-canvas-item.is-current:hover { background: var(--menu-hover); }
+.workspace-canvas-item:focus-visible { background: var(--surface-focus); }
+.workspace-canvas-preview { display: grid; width: calc(var(--space-8) + var(--space-6)); height: var(--target); flex: 0 0 auto; place-items: center; overflow: hidden; border: var(--stroke-surface) solid var(--border); border-radius: var(--radius-preview); background: var(--background); color: var(--muted-foreground); }
+.workspace-canvas-preview img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.workspace-canvas-copy { display: grid; min-width: 0; flex: 1 1 auto; gap: var(--space-1); }
+.workspace-canvas-name { min-width: 0; overflow: hidden; color: var(--foreground); font-size: var(--text-ui); font-weight: 500; line-height: var(--leading-ui); text-overflow: ellipsis; white-space: nowrap; }
+.workspace-canvas-meta { min-width: 0; overflow: hidden; color: var(--muted-foreground); font-size: var(--text-caption); line-height: var(--leading-ui); text-overflow: ellipsis; white-space: nowrap; }
+.workspace-current-mark { flex: 0 0 auto; color: var(--muted-foreground); }
+.workspace-menu-footer { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); padding-top: var(--space-1); border-top: var(--stroke-surface) solid var(--border); }
+.workspace-footer-action { min-width: 0; gap: var(--space-2); color: var(--muted-foreground); }
+.workspace-footer-action > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.workspace-menu-location { margin-inline-start: auto; color: var(--muted-foreground); font-size: var(--text-caption); line-height: var(--leading-ui); white-space: nowrap; }
+.workspace-rename-form { margin-top: var(--space-2); }
+.galta-shell { position: relative; height: 100%; overflow: hidden; background: var(--background); container-type: inline-size; }
+/* One interpolated length moves the library edge and the canvas header together.
+   Tailwind owns the layout, material, targets and reduced-motion treatment. */
+@property --collection-inset { syntax: '<length>'; inherits: true; initial-value: 0px; }
+/* The line every floating control and notice stays above: the composer, or
+   the settings corner where it rests on the composer. */
+.galta-shell { --chrome-floor: max(calc(var(--composer-height, 88px) + var(--space-4)), calc(var(--settings-bottom, var(--space-3)) + var(--target-compact) + var(--space-4))); }
+.galta-canvas { position: absolute; inset: 0; }
+.drawing-dock {
+  --dock-gap: var(--space-1);
+  --dock-padding: var(--space-1);
+  --dock-inset: calc(var(--dock-padding) * 2);
+  --dock-preferred-group-gap: var(--space-2);
+  --dock-group-gap: var(--dock-preferred-group-gap);
+  --dock-height: calc(var(--target-compact) * var(--dock-tool-count) + var(--dock-gap) * (var(--dock-tool-count) - var(--dock-group-count)) + var(--dock-preferred-group-gap) * (var(--dock-group-count) - 1) + var(--dock-inset));
+  --dock-bottom: var(--chrome-floor);
+  /* One vertical rule at every width: center where there is room, move above
+     the composer when needed, and never enter the header's clearance. */
+  --dock-top: clamp(calc(var(--header-height, calc(var(--target-compact) + var(--space-4))) + var(--space-8)), calc(50% - var(--dock-height) / 2), calc(100% - var(--dock-bottom) - var(--dock-height)));
+  position: absolute;
+  isolation: isolate;
+  z-index: var(--layer-tools);
+  left: var(--space-2);
+  top: var(--dock-top);
+  width: calc(var(--target-compact) + var(--dock-inset));
+  height: var(--dock-height);
+  min-height: calc(var(--target-compact) + var(--dock-inset));
+  color: var(--foreground);
+  border-radius: var(--radius-menu);
+  box-shadow: var(--graphite-shadow);
+}
+.drawing-dock[data-overflow=true] {
+  --dock-group-gap: var(--dock-gap);
+  /* A scrollable dock has one row cadence; quiet rules retain its grouping.
+     Keep complete rows at both ends without shrinking the click targets. */
+  height: min(calc(var(--target-compact) * var(--dock-tool-count) + var(--dock-gap) * (var(--dock-tool-count) - 1) + var(--dock-inset)), calc(round(down, calc(100% - var(--dock-top) - var(--dock-bottom) - var(--dock-inset) + var(--dock-gap)), calc(var(--target-compact) + var(--dock-gap))) + var(--dock-inset) - var(--dock-gap)));
+}
+/* The settings corner shares the dock's left edge; useCanvasInsets publishes
+   --settings-bottom so it centres on the composer's footer line, or rests on
+   the composer where the composer would reach it. */
+.settings-corner { position: absolute; z-index: var(--layer-tools); left: var(--space-2); bottom: var(--settings-bottom, var(--space-3)); }
+.settings-corner-button { width: calc(var(--target-compact) + var(--dock-inset, var(--space-2))); padding: 0; }
+.settings-corner-button > svg { width: var(--icon-small); height: var(--icon-small); }
+.settings-corner-avatar { --avatar-size: calc(var(--icon) + var(--space-1)); }
+@media (prefers-reduced-motion: no-preference) {
+  .settings-corner-avatar.is-arriving { animation: settings-arrive var(--motion-sheet) var(--ease-spring) both; }
+  .settings-corner-button:hover .settings-corner-avatar { scale: 1.06; }
+  .settings-corner-avatar { transition: scale var(--motion-fast) var(--ease-out); }
+}
+@keyframes settings-arrive { from { opacity: 0; scale: .4; } 40% { opacity: 1; } }
+.drawing-tools { scrollbar-width: thin; scrollbar-color: var(--graphite-border) transparent; scroll-snap-type: y mandatory; }
+.drawing-tool { scroll-snap-align: start; }
+.canvas-notice { position: absolute; z-index: var(--layer-notice); left: 50%; bottom: var(--chrome-floor); transform: translateX(-50%); max-width: calc(100% - 144px); padding: var(--space-3) var(--space-4); border-radius: var(--radius-panel); color: var(--foreground); font-size: var(--text-ui); }
+.canvas-notice[role=alert] { color: var(--destructive); }
+.canvas-notice-status { color: var(--foreground); }
+.canvas-notice button { border: 0; margin-left: var(--space-3); background: none; color: inherit; cursor: pointer; }
+.workspace-sync-notice { position: absolute; z-index: var(--layer-notice); left: 50%; bottom: var(--chrome-floor); display: flex; align-items: center; gap: var(--space-2); max-width: calc(100% - 144px); transform: translateX(-50%); padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4); border-radius: var(--radius-panel); color: var(--foreground); font-size: var(--text-ui); }
+.workspace-sync-notice [data-size=icon] { margin-left: 0; }
+
+/* Native context menus, text editing and dialogs remain available. */
+.galta-canvas .excalidraw :is(.App-menu_top, .App-menu_bottom, .App-top-bar, .App-bottom-bar) { display: none; }
+@container (max-width: 620px) {
+ .canvas-notice, .workspace-sync-notice { max-width: calc(100% - 32px); }
+}
+@media (max-height: 680px) {
+ .drawing-dock { --dock-gap: 0px; }
+}

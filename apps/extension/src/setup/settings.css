@@ -1,0 +1,193 @@
+/* Settings: one dialog over the canvas. One header, one row, one action, one
+   field and one motion system serve every view, so moving between views
+   changes content, never the grammar. Values come from tokens.css. */
+
+.settings-panel {
+  --settings-lead: var(--icon);
+  --settings-row: calc(var(--target) + var(--space-1));
+  max-width: 400px;
+  padding: var(--space-5) var(--space-6) var(--space-6);
+  transform-origin: var(--settings-origin, 50% 50%);
+  container-type: inline-size;
+}
+.settings-panel > [data-dialog-close] { top: var(--space-5); right: var(--space-5); }
+
+/* Header: Back and Close share one bar; the title always starts below it. */
+.settings-bar { display: flex; align-items: center; height: var(--target-compact); margin-right: var(--target-compact); }
+.settings-back { display: inline-flex; align-items: center; gap: var(--space-1); height: var(--target-compact); margin-left: calc(-1 * var(--space-2)); padding: 0 var(--space-2) 0 var(--space-1); border: 0; border-radius: var(--radius-control); background: transparent; color: var(--muted-foreground); font: inherit; font-size: var(--text-ui); line-height: var(--leading-ui); cursor: pointer; }
+.settings-back svg { width: var(--icon-small); height: var(--icon-small); }
+.settings-back:hover { color: var(--foreground); background: var(--surface-hover); }
+.settings-heading { margin-top: var(--space-3); }
+.settings-heading:has(.settings-heading-lead) { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: var(--space-4); }
+.settings-title { margin: 0; outline: none; font: 400 var(--text-brand)/1.12 var(--font-display); text-wrap: balance; overflow-wrap: anywhere; }
+.settings-header[data-lead] .settings-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.settings-description { margin: var(--space-2) 0 0; color: var(--muted-foreground); font-size: var(--text-ui); line-height: var(--leading-reading); text-wrap: pretty; overflow-wrap: anywhere; }
+.settings-body { margin-top: var(--space-6); }
+
+/* Rows: a mark in the leading column, the label, and state at the trailing
+   edge. Hairlines start at the label, so marks read as one column. */
+.settings-list { display: flex; flex-direction: column; }
+.settings-row { position: relative; display: grid; grid-template-columns: var(--settings-lead) minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-3); width: 100%; min-height: var(--settings-row); padding: 0; border: 0; background: none; color: var(--foreground); font: inherit; font-size: var(--text-ui); line-height: var(--leading-ui); text-align: left; }
+button.settings-row { cursor: pointer; }
+button.settings-row:disabled { cursor: default; color: var(--muted-foreground); }
+.settings-row + .settings-row::after, .settings-reveal + .settings-row::after { content: ""; position: absolute; top: 0; left: calc(var(--settings-lead) + var(--space-3)); right: 0; height: var(--stroke-surface); background: var(--border); }
+button.settings-row::before { content: ""; position: absolute; inset: var(--stroke-surface) calc(-1 * var(--space-2)); border-radius: var(--radius-control); background: var(--menu-hover); opacity: 0; }
+button.settings-row:hover::before { opacity: 1; }
+button.settings-row-danger::before { background: var(--destructive-wash); }
+button.settings-row:focus-visible { background: none; }
+button.settings-row:focus-visible::before { opacity: 1; background: var(--surface-focus); }
+.settings-row > * { position: relative; }
+.settings-row-lead { display: grid; place-items: center; color: var(--muted-foreground); }
+.settings-row-lead > svg { width: var(--icon-small); height: var(--icon-small); }
+.settings-row-text { display: flex; min-width: 0; flex-direction: column; }
+.settings-row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-row-detail { overflow: hidden; color: var(--muted-foreground); font-size: var(--text-caption); text-overflow: ellipsis; white-space: nowrap; }
+nav.settings-list .settings-row:not(.settings-row-hero) .settings-row-label { overflow: visible; white-space: normal; overflow-wrap: anywhere; text-wrap: balance; }
+.settings-row-state { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--muted-foreground); font-size: var(--text-ui); white-space: nowrap; }
+.settings-row-state > svg { width: var(--icon-model); height: var(--icon-model); margin-right: calc(-1 * var(--space-1)); }
+.settings-row-hint { color: var(--foreground); font-weight: 500; }
+.settings-row-editable { grid-template-columns: var(--settings-lead) auto minmax(0, 1fr); }
+.settings-row-editable .settings-row-state { justify-content: flex-end; }
+.settings-name-value { overflow: hidden; text-overflow: ellipsis; }
+.settings-row-hint { flex: none; }
+.settings-ok { display: inline-flex; align-items: center; gap: var(--space-1); }
+.settings-ok svg { width: var(--icon-disclosure); height: var(--icon-disclosure); color: var(--foreground); }
+.settings-row-danger, .settings-row-danger .settings-row-lead { color: var(--destructive); }
+
+/* The person leads the list as its own group, with a larger mark. */
+.settings-row-hero { --settings-lead: var(--target); min-height: calc(var(--target) + var(--space-6)); margin-bottom: var(--space-3); }
+.settings-row-hero .settings-row-label { font-weight: 500; }
+.settings-row-hero + .settings-row::after { left: 0; top: calc(-1 * var(--space-2)); }
+.settings-lead-mark { display: grid; width: var(--target); height: var(--target); place-items: center; border-radius: var(--radius-round); background: var(--field); color: var(--muted-foreground); }
+.settings-lead-mark svg { width: var(--icon); height: var(--icon); }
+
+/* Avatars are always round: a picture, else the initial on paper. */
+.account-avatar { --avatar-size: var(--icon); display: inline-grid; flex: none; width: var(--avatar-size); height: var(--avatar-size); place-items: center; overflow: hidden; border-radius: var(--radius-round); background: var(--field); color: var(--foreground); box-shadow: inset 0 0 0 var(--stroke-surface) var(--border); }
+.account-avatar img { width: 100%; height: 100%; object-fit: cover; user-select: none; }
+.account-avatar-initial { font-size: var(--text-caption); font-weight: 600; line-height: 1; }
+.account-avatar-row .account-avatar-initial, .account-avatar-hero .account-avatar-initial { font-size: var(--text-input); }
+.account-avatar-row { --avatar-size: var(--target); }
+.account-avatar-hero { --avatar-size: calc(var(--target) + var(--space-2)); }
+
+/* Actions: one geometry; the variant carries the weight. */
+.settings-stack { display: grid; gap: var(--space-3); }
+.settings-next { margin-top: var(--space-5); }
+.settings-action { width: 100%; height: var(--target); justify-content: center; gap: var(--space-2); padding-inline: var(--space-4); border-radius: var(--radius-control); font-size: var(--text-body); font-weight: 500; }
+.settings-action svg, .google-mark { width: var(--icon-small); height: var(--icon-small); }
+/* A destructive action that is not ready yet looks like any unavailable one. */
+.settings-action[data-variant=destructive]:disabled { opacity: 1; background: var(--field); color: var(--muted-foreground); }
+.settings-quiet { color: var(--muted-foreground); font-weight: 400; }
+.settings-quiet:hover { color: var(--foreground); }
+
+/* Fields are Galta's neutral, frameless field; focus and an error change
+   the surface (controls.css), never the edge. */
+.settings-panel .settings-field { height: var(--target); padding-inline: var(--space-3); border-radius: var(--radius-control); font-size: var(--text-input); }
+.settings-panel .settings-field-compact { height: var(--target-compact); font-size: var(--text-ui); }
+.settings-inline-form { display: flex; align-items: center; gap: var(--space-2); }
+.settings-inline-form > [data-slot=input] { flex: 1; }
+.settings-reveal { display: grid; grid-template-rows: 0fr; }
+.settings-reveal[data-open=true] { grid-template-rows: 1fr; }
+.settings-reveal > div { min-height: 0; overflow: hidden; visibility: hidden; }
+.settings-reveal[data-open=true] > div { visibility: visible; }
+.settings-reveal form { padding: var(--space-1) 0 var(--space-3) calc(var(--settings-lead) + var(--space-3)); }
+
+.settings-hint, .settings-notice { margin: 0; color: var(--muted-foreground); font-size: var(--text-ui); line-height: var(--leading-reading); text-wrap: pretty; overflow-wrap: anywhere; }
+.settings-notice { color: var(--foreground); }
+.settings-error { margin: 0; color: var(--destructive); font-size: var(--text-label); line-height: var(--leading-reading); overflow-wrap: anywhere; }
+.settings-list + .settings-error { margin-top: var(--space-3); }
+.settings-or { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--space-3); margin: 0; color: var(--muted-foreground); font-size: var(--text-caption); line-height: var(--leading-ui); }
+.settings-or::before, .settings-or::after { content: ""; height: var(--stroke-surface); background: var(--border); }
+.settings-aside { display: flex; align-items: center; justify-content: space-between; margin-inline: calc(-1 * var(--space-2)); }
+.settings-waiting { display: inline-flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--muted-foreground); font-size: var(--text-ui); line-height: var(--leading-ui); }
+.settings-waiting > span { width: 6px; height: 6px; border-radius: var(--radius-round); background: var(--accent-indicator); }
+.settings-unavailable { padding-block: var(--space-4); }
+
+/* A sign-in code: six cells over one input. */
+.settings-code { position: relative; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-2); }
+.settings-code-cell { position: relative; display: grid; height: calc(var(--target) + var(--space-4)); place-items: center; border-radius: var(--radius-control); background: var(--field); font: 400 var(--text-brand)/1 var(--font-ui); font-variant-numeric: tabular-nums; }
+.settings-code[data-focused] .settings-code-cell[data-active] { background: var(--surface-focus); }
+.settings-code[data-focused] .settings-code-cell[data-selected] { background: var(--surface-focus); }
+.settings-code-cell[data-active]:not([data-filled])::after { content: ""; width: calc(var(--stroke-surface) * 1.5); height: var(--text-brand); background: var(--foreground); }
+.settings-code[data-invalid] .settings-code-cell { background: var(--field-invalid); }
+.settings-code-input { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; opacity: 0; font-size: var(--text-input); cursor: text; }
+
+/* Details fold below everything else. */
+.settings-details { margin-top: var(--space-5); font-size: var(--text-label); }
+.settings-details summary { display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--target-compact); line-height: var(--leading-ui); margin-left: calc(-1 * var(--space-2)); padding-inline: var(--space-2); border-radius: var(--radius-control); color: var(--muted-foreground); cursor: pointer; list-style: none; }
+.settings-details summary::-webkit-details-marker { display: none; }
+.settings-details summary:hover { background: var(--surface-hover); color: var(--foreground); }
+.settings-details summary svg { width: var(--icon-disclosure); height: var(--icon-disclosure); }
+.settings-details[open] summary svg { transform: rotate(180deg); }
+.settings-details-content { margin-top: var(--space-2); color: var(--muted-foreground); line-height: var(--leading-reading); overflow-wrap: anywhere; }
+.settings-details-content p + p { margin-top: var(--space-2); }
+.settings-details-content [data-slot=button] { margin: var(--space-2) 0 0 calc(-1 * var(--space-2)); }
+.settings-code-block { max-height: 180px; overflow-y: auto; margin: var(--space-2) 0; padding: var(--space-3); border-radius: var(--radius-control); background: var(--field); color: var(--foreground); font: var(--text-label)/var(--leading-reading) var(--font-code); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+
+/* Generation providers, in the row grammar. */
+.generation-mark { width: var(--icon-small); height: var(--icon-small); background-color: currentColor; mask-size: contain; mask-position: center; mask-repeat: no-repeat; color: var(--foreground); }
+.generation-provider + .generation-provider > .settings-row::after { content: ""; position: absolute; top: 0; left: calc(var(--settings-lead) + var(--space-3)); right: 0; height: var(--stroke-surface); background: var(--border); }
+.generation-form .settings-error { margin-top: var(--space-2); }
+.generation-help { display: flex; align-items: center; justify-content: space-between; margin-top: var(--space-2); }
+.generation-help a { display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--target-compact); color: var(--muted-foreground); font-size: var(--text-label); line-height: var(--leading-ui); text-underline-offset: var(--space-1); }
+.generation-help a:hover { color: var(--foreground); text-decoration: underline; }
+.generation-help a svg { width: var(--icon-disclosure); height: var(--icon-disclosure); }
+.generation-row-error { margin: 0 0 var(--space-3) calc(var(--settings-lead) + var(--space-3)); }
+
+/* Views move as a stack inside one viewport whose height follows them. */
+.settings-viewport { position: relative; margin-inline: calc(-1 * var(--space-2)); padding-inline: var(--space-2); overflow: hidden; }
+.settings-view-leaving { position: absolute; top: 0; right: var(--space-2); left: var(--space-2); pointer-events: none; }
+
+@media (max-width: 440px) {
+  .settings-panel { padding: var(--space-4) var(--space-5) var(--space-5); }
+  .settings-panel > [data-dialog-close] { top: var(--space-4); right: var(--space-4); }
+}
+
+/* A side panel keeps labels whole: their status moves beneath them while
+   the chevron stays at the trailing edge. The wide layout stays one line. */
+@container (max-width: 280px) {
+  nav.settings-list .settings-row:not(.settings-row-hero) { grid-template-columns: var(--settings-lead) minmax(0, 1fr); padding-block: var(--space-2); }
+  nav.settings-list .settings-row:not(.settings-row-hero) .settings-row-lead { grid-row: 1 / 3; }
+  nav.settings-list .settings-row:not(.settings-row-hero) .settings-row-text { grid-column: 2; padding-right: var(--space-5); }
+  nav.settings-list .settings-row:not(.settings-row-hero) .settings-row-state { position: static; grid-column: 2; grid-row: 2; padding-right: var(--space-5); white-space: normal; overflow-wrap: anywhere; }
+  nav.settings-list .settings-row:not(.settings-row-hero) .settings-row-state > svg { position: absolute; right: 0; top: 50%; translate: 0 -50%; }
+  nav.settings-list .settings-row-hero .settings-row-detail { white-space: normal; overflow-wrap: anywhere; }
+}
+
+@media (forced-colors: active) {
+  .settings-code-cell { border: var(--stroke-surface) solid CanvasText; }
+  .settings-code[data-focused] .settings-code-cell[data-active],
+  .settings-code[data-focused] .settings-code-cell[data-selected] { outline: var(--focus-width) solid Highlight; outline-offset: calc(-1 * var(--focus-width)); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The dialog grows out of what opened it and sinks back into it. */
+  .dialog-surface.settings-panel[data-state=open] { animation: settings-open var(--motion-sheet) var(--ease-sheet); }
+  .dialog-surface.settings-panel[data-state=closed] { animation: settings-open var(--motion-sheet-exit) var(--ease-settle) reverse both; }
+  .settings-viewport { transition: height var(--motion-disclosure) var(--ease-sheet); }
+  .settings-view[data-direction=forward] { animation: settings-view-forward var(--motion-disclosure) var(--ease-sheet) both; }
+  .settings-view[data-direction=back] { animation: settings-view-back var(--motion-disclosure) var(--ease-sheet) both; }
+  .settings-view-leaving[data-direction=forward] { animation: settings-leave-forward var(--motion-view-exit) var(--ease-settle) both; }
+  .settings-view-leaving[data-direction=back] { animation: settings-leave-back var(--motion-view-exit) var(--ease-settle) both; }
+  button.settings-row::before, .settings-back, .settings-details summary { transition: opacity var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out); }
+  .settings-reveal { transition: grid-template-rows var(--motion-disclosure-exit) var(--ease-settle); }
+  .settings-reveal[data-open=true] { transition-duration: var(--motion-disclosure); transition-timing-function: var(--ease-sheet); }
+  .settings-reveal > div { transition: visibility 0s linear var(--motion-disclosure-exit); }
+  .settings-reveal[data-open=true] > div { transition-delay: 0s; }
+  .settings-code-cell { transition: background-color var(--motion-fast) var(--ease-out); }
+  .settings-code-cell[data-active]:not([data-filled])::after { animation: settings-caret var(--motion-caret) steps(1) infinite; }
+  .settings-code-cell[data-filled] { animation: settings-digit var(--motion-fast) var(--ease-out); }
+  .settings-code[data-invalid] { animation: settings-code-refused var(--motion-feedback) var(--ease-out); }
+  .settings-waiting > span { animation: settings-breathe var(--motion-breathe) var(--ease-settle) infinite; }
+  .settings-details summary svg { transition: transform var(--motion-fast) var(--ease-out); }
+}
+@keyframes settings-open { from { opacity: 0; transform: translate(var(--settings-from-x, 0px), var(--settings-from-y, var(--space-2))) scale(.94); } 35% { opacity: 1; } }
+/* The next view arrives as the last one clears: hidden for the first 35%,
+   fully present by 75%, while its slide runs the whole length. */
+@keyframes settings-view-forward { from { opacity: 0; transform: translateX(var(--space-6)); } 35% { opacity: 0; } 75% { opacity: 1; } }
+@keyframes settings-view-back { from { opacity: 0; transform: translateX(calc(-1 * var(--space-6))); } 35% { opacity: 0; } 75% { opacity: 1; } }
+@keyframes settings-leave-forward { to { opacity: 0; transform: translateX(calc(-1 * var(--space-4))); } }
+@keyframes settings-leave-back { to { opacity: 0; transform: translateX(var(--space-4)); } }
+@keyframes settings-code-refused { 20%, 60% { transform: translateX(calc(-1 * var(--space-1))); } 40%, 80% { transform: translateX(var(--space-1)); } }
+@keyframes settings-caret { 50% { opacity: 0; } }
+@keyframes settings-digit { from { transform: translateY(var(--space-1)); opacity: .4; } }
+@keyframes settings-breathe { 50% { opacity: .35; } }

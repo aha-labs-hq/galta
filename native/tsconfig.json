@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "noEmit": true,
+    "types": ["bun"],
+    "lib": ["ESNext"]
+  },
+  "include": ["*.ts", "bridge/**/*.ts", "adapters/codex/**/*.ts", "mcp/**/*.ts", "media/**/*.ts", "companion/**/*.ts"]
+}

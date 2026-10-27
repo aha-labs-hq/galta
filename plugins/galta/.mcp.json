@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "galta": {
+      "command": "/bin/sh",
+      "args": [
+        "-c",
+        "case \"$(uname -s)\" in Darwin) GALTAROOT=\"$HOME/Library/Application Support/Galta\";; Linux) GALTAROOT=\"${XDG_DATA_HOME:-$HOME/.local/share}/galta\";; *) printf \"Galta local MCP is not supported on this platform.\\n\" >&2; exit 1;; esac; if [ -x \"$GALTAROOT/current/Resources/galta-mcp\" ]; then exec \"$GALTAROOT/current/Resources/galta-mcp\"; fi; if [ -x \"$GALTAROOT/bin/galta-mcp\" ]; then exec \"$GALTAROOT/bin/galta-mcp\"; fi; printf \"Open the Galta Mac app and connect your browser before using this plugin.\\n\" >&2; exit 1"
+      ]
+    }
+  }
+}

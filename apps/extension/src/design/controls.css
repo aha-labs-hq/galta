@@ -1,0 +1,61 @@
+/* Focus changes the control's surface, never its edge. Compound fields own
+   the surface so an editable value and its unit remain one control. */
+:is(button, [role=button], [role=combobox], input, textarea, select, summary, a, [tabindex="0"]):focus-visible {
+  outline: none;
+  box-shadow: none;
+  background-color: var(--surface-focus);
+}
+:is([data-slot=input], [data-slot=textarea], [data-slot=select-trigger]):focus-visible,
+.control-field:has(:focus-visible) {
+  outline: none;
+  box-shadow: none;
+  background-color: var(--surface-focus);
+}
+.control-field :is(input, textarea):focus-visible { outline: none; box-shadow: none; background: transparent; }
+.control-choice:has(:focus-visible) { background-color: var(--surface-focus); color: var(--foreground); }
+.control-choice > .sr-only:focus-visible { outline: none; box-shadow: none; }
+:is([data-slot=input], [data-slot=textarea], [data-slot=select-trigger])[aria-invalid=true] { background-color: var(--field-invalid); }
+[data-variant=default]:focus-visible { background-color: var(--primary-focus); box-shadow: var(--primary-edge-shadow); }
+[data-slot=button][data-variant=destructive]:focus-visible { background-color: color-mix(in srgb, var(--destructive) 82%, #000); }
+[data-slot=button][aria-pressed=true]:focus-visible { background-color: color-mix(in srgb, var(--accent) 80%, var(--accent-foreground)); }
+[data-slot=textarea].composer-input:focus-visible { outline: none; box-shadow: none; background: transparent; }
+
+[data-slot=button]:active:not(:disabled):not(:focus-visible) { transform: scale(.98); }
+[data-slot=button] { transition-property: color, background-color, transform; }
+/* Radix asChild triggers replace data-slot; the Button variant stays intact. */
+[data-theme=graphite] [data-variant=ghost]:is(:hover, :focus-visible, [aria-pressed=true], [data-state=open]) { background-image: var(--graphite-wash); }
+[data-theme=graphite] [data-variant=ghost]:focus-visible { color: var(--foreground); }
+:is([data-slot=select-trigger], [data-slot=input], [data-slot=textarea], .control-field) { transition: background-color var(--motion-fast) var(--ease-out); }
+[data-slot=slider-thumb]::after { content: ''; position: absolute; inset: -10px; }
+[data-slot=slider-thumb]:focus-visible { outline: none; box-shadow: none; background: var(--foreground); scale: 1.35; }
+[data-slot=select-item][data-highlighted], [data-slot=dropdown-menu-radio-item][data-highlighted] { background: var(--surface-hover); outline: none; }
+
+@media (forced-colors: active) {
+  :is(button, [role=button], [role=combobox], input, textarea, select, summary, a, [tabindex="0"]):focus-visible,
+  :is([data-slot=input], [data-slot=textarea], [data-slot=select-trigger], [data-slot=slider-thumb]):focus-visible,
+  .control-field:has(:focus-visible), .control-choice:has(:focus-visible) { outline: 2px solid Highlight; outline-offset: -2px; }
+  [data-slot=select-item][data-highlighted], [data-slot=dropdown-menu-radio-item][data-highlighted] { outline: 2px solid Highlight; }
+}
+/* Radix owns this positioning wrapper. A fading child cannot release its hit
+   area by itself; retire the wrapper's pointer input with the popover. */
+[data-radix-popper-content-wrapper]:has(> [data-slot="popover-content"][data-state="closed"]) {
+  pointer-events: none;
+}
+
+/* Dialogs settle into place: the surface rises a little as it appears and
+   sinks back as it leaves. A closing dialog stops taking input at once. */
+.dialog-overlay[data-state=closed], .dialog-surface[data-state=closed] { pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .dialog-overlay[data-state=open] { animation: dialog-overlay-in var(--motion-panel) var(--ease-out); }
+  .dialog-overlay[data-state=closed] { animation: dialog-overlay-in var(--motion-fast) var(--ease-settle) reverse both; }
+  .dialog-surface[data-state=open] { animation: dialog-surface-in var(--motion-panel) var(--ease-out); }
+  .dialog-surface[data-state=closed] { animation: dialog-surface-in var(--motion-fast) var(--ease-settle) reverse both; }
+}
+@keyframes dialog-overlay-in { from { opacity: 0; } }
+/* The surface is opaque within the first third, so artwork never shows through
+   its text; the rest is the settle. Centring uses the translate property, so
+   this transform only adds the settle. */
+@keyframes dialog-surface-in {
+  from { opacity: 0; transform: translateY(var(--space-2)) scale(.985); }
+  30% { opacity: 1; }
+}

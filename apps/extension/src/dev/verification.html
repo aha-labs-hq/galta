@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Galta drag verification</title></head>
+  <body>
+    <aside id="test-source">
+      <h1>Image source fixture</h1>
+      <p>Drag the image into Galta. This tests the real content script and CanvasApp within one browser document; it does not certify native side-panel delivery.</p>
+      <form id="source-form"><label>Image URL<input id="source-url" type="url" placeholder="Optional HTTP image URL" required/></label><button type="submit">Load source</button></form>
+      <a href="https://example.com/reference"><img id="reference-image" alt="Portrait image fixture, 300 by 450" draggable="true"/></a>
+    </aside>
+    <div id="root"></div>
+    <script type="module" src="./verification.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,102 @@
+/* Time Machine: the stage is a read-only canvas laid exactly over the live
+   one; the caption and the controls float over its edges on chrome backings. */
+.history-entry { position: static; z-index: var(--layer-history); }
+.history-backdrop { position: fixed; inset: 0; z-index: var(--layer-popup); background: var(--background); }
+.history { position: fixed; inset: 0; z-index: calc(var(--layer-popup) + 1); color: var(--foreground); font: 400 var(--text-ui)/var(--leading-ui) var(--font-ui); outline: none; overscroll-behavior: none; pointer-events: none; }
+.history[data-leaving] { pointer-events: none !important; }
+.history[data-leaving] * { pointer-events: none !important; }
+
+.history-canvas { position: fixed; overflow: hidden; pointer-events: auto; }
+/* The engine keeps its own layers to itself, so what follows it in the stage
+   (the dissolving frame, the light, the choice, a notice) paints above it. */
+.history-engine { position: absolute; inset: 0; isolation: isolate; }
+.history-canvas .excalidraw { --color-surface-lowest: var(--background); }
+/* A past document is a picture of itself: it takes no pointer, so the stage
+   pans and points over it. */
+.history-canvas .excalidraw__embeddable-container { pointer-events: none !important; }
+/* The engine's own interface has no place here: only the canvas shows. */
+.history-canvas .layer-ui__wrapper, .history-canvas .App-bottom-bar, .history-canvas .App-toolbar-container, .history-canvas .zen-mode-transition { display: none !important; }
+.history-dissolve, .history-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.history-dissolve { opacity: 0; }
+.history-unreadable { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--destructive); font-size: var(--text-label); pointer-events: none; }
+.history-overlay { overflow: visible; }
+.history-selection { fill: none; stroke: var(--ring); stroke-width: var(--stroke-surface); rx: var(--radius-control); }
+.history-mark { animation: history-mark-life var(--motion-mark) linear forwards; }
+/* Galta's changes carry its light: a pale core in a darker wash, as on the
+   live canvas. The user's own changes are traced in ink. */
+.history-mark rect { fill: none; rx: var(--radius-control); stroke-linecap: round; stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: history-mark-draw var(--motion-mark-draw) var(--ease-sheet) forwards; }
+.history-mark-line { stroke-width: var(--agent-light-stroke); }
+.history-mark-wash { stroke: var(--agent-light-wash); stroke-width: var(--agent-light-band); opacity: .85; }
+.history-mark-agent .history-mark-line { stroke: var(--agent-light-line); }
+.history-mark-user .history-mark-line { stroke: var(--foreground); opacity: .7; }
+@keyframes history-mark-draw { to { stroke-dashoffset: 0; } }
+@keyframes history-mark-life { 0% { opacity: 0; } 5% { opacity: 1; } 65% { opacity: 1; } 100% { opacity: 0; } }
+
+.history-caption, .history-controls { position: absolute; left: 0; right: 0; }
+.history-caption { top: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); }
+.history-caption > *, .history-controls { pointer-events: auto; background: var(--chrome-surface); -webkit-backdrop-filter: blur(var(--chrome-blur)); backdrop-filter: blur(var(--chrome-blur)); }
+.history-caption > * { border-radius: var(--radius-lg); }
+.history-caption-text { min-width: 0; max-width: min(640px, 100%); padding: var(--space-1) var(--space-3) var(--space-2) var(--space-1); }
+.history-title { display: inline-flex; align-items: center; gap: var(--space-2); max-width: 100%; min-height: var(--target-compact); padding: 0 var(--space-2); border: 0; border-radius: var(--radius-control); background: none; color: inherit; font: 500 var(--text-body)/var(--leading-ui) var(--font-ui); text-align: left; cursor: text; transition: background-color var(--motion-fast) var(--ease-out); }
+/* A request is read, not glanced at: up to two lines before it ends in an ellipsis. */
+.history-title { padding-block: var(--space-1); }
+.history-title > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.history-title > svg { flex: none; width: var(--icon-disclosure); height: var(--icon-disclosure); color: var(--muted-foreground); opacity: 0; transition: opacity var(--motion-fast) var(--ease-out); }
+.history-title:is(:hover, :focus-visible) { background-color: var(--surface-hover); }
+.history-title:is(:hover, :focus-visible) > svg { opacity: 1; }
+.history-title:disabled { cursor: default; }
+.history-caption form { width: min(100%, 360px); padding: 0 var(--space-1); }
+.history-caption input { height: var(--target-compact); font-size: var(--text-body); }
+.history-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-2); min-height: calc(var(--text-caption) * var(--leading-ui)); padding: 0 var(--space-2); color: var(--muted-foreground); font-size: var(--text-caption); }
+.history-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-location { display: inline-flex; align-items: center; gap: var(--space-1); }
+.history-detail [data-slot=button] { color: inherit; font-size: inherit; }
+.history-detail .history-timeline-trigger { padding-inline: var(--space-1); }
+.history-detail [data-slot=button] svg { width: var(--icon-disclosure); height: var(--icon-disclosure); }
+.history-timeline-menu { z-index: calc(var(--layer-popup) + 2); width: var(--history-menu-width); max-width: calc(100vw - var(--space-8)); }
+.history-timeline-option { font-size: var(--text-label); }
+.history-timeline-option > span:first-child { min-width: 0; }
+.history-timeline-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.history-timeline-date { display: block; margin-top: var(--space-1); color: var(--muted-foreground); font-size: var(--text-caption); }
+
+.history-controls { bottom: 0; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-4) var(--space-4); }
+.history-error { margin: 0; color: var(--destructive); font-size: var(--text-label); }
+.history-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); min-height: var(--target-compact); }
+.history-actions [data-slot=button] { font-size: var(--text-label); }
+.history-actions .history-primary { margin-left: var(--space-1); padding-inline: var(--space-4); }
+.history-spacer { flex: 1; }
+.history-actions [aria-pressed=true] { background-color: var(--surface-pressed); }
+/* Cutting removes versions for good once Time Machine closes. */
+.history-actions .history-cut:not(:disabled) { color: var(--destructive); }
+.history-actions .history-cut:not(:disabled):is(:hover, :focus-visible) { background: var(--destructive-wash); }
+.history-hint { margin: 0; color: var(--muted-foreground); font-size: var(--text-label); }
+.history-context { margin: 0; padding-inline: var(--space-2); color: var(--muted-foreground); font-size: var(--text-caption); }
+.history-transport { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); }
+.history-transport[data-trimming] { grid-template-columns: auto minmax(0, 1fr); }
+.history-transport > [data-slot=button] { margin-bottom: var(--space-4); }
+.history-ruler-container { position: relative; }
+.history-ruler { position: relative; height: var(--history-ruler-height); border-radius: var(--radius-control); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.history-ruler:active { cursor: grabbing; }
+/* The ruler draws its own focus, a baseline under its ticks (HistoryRuler),
+   so it takes no focus surface. */
+.history-ruler:focus-visible { background-color: transparent; }
+.history-ruler[aria-disabled=true] { cursor: default; }
+.history-ruler canvas { position: absolute; inset: 0; width: 100%; height: 100%; -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--space-8), #000 calc(100% - var(--space-8)), transparent); mask-image: linear-gradient(90deg, transparent, #000 var(--space-8), #000 calc(100% - var(--space-8)), transparent); }
+
+/* Opening waits for the stage's first frame, identical to the live canvas;
+   then the field covers the editor's chrome and the controls arrive. */
+.history-canvas { visibility: hidden; }
+.history[data-arrived] .history-canvas { visibility: visible; }
+.history-backdrop { opacity: 0; transition: opacity var(--motion-panel) var(--ease-out); }
+.history-backdrop[data-arrived] { opacity: 1; }
+.history:not([data-arrived]) :is(.history-caption, .history-controls) { opacity: 0; }
+.history[data-arrived] .history-caption { animation: history-appear var(--motion-sheet) var(--ease-sheet); }
+.history[data-arrived] .history-controls { animation: history-rise var(--motion-sheet) var(--ease-sheet); }
+@keyframes history-appear { from { opacity: 0; } }
+@keyframes history-rise { from { opacity: 0; transform: translateY(var(--space-4)); } 40% { opacity: 1; } }
+
+@media (min-width: 900px) {
+  .history-caption { padding: var(--space-4) var(--space-6); }
+  .history-controls { padding: var(--space-2) var(--space-8) var(--space-6); }
+}
+@media (prefers-reduced-motion: reduce) { .history-mark, .history-mark rect { animation: none; stroke-dashoffset: 0; } .history-mark { opacity: 0; } }

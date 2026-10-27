@@ -1,0 +1,71 @@
+@import "tailwindcss" source(".");
+@import "tw-animate-css";
+@import "./design/tokens.css";
+@import "./design/excalidraw.css";
+@import "./design/controls.css";
+@source "../node_modules/streamdown/dist/*.js";
+@theme inline {
+  --spacing: var(--space-1);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--surface-hover);
+  --color-secondary-foreground: var(--foreground);
+  --color-muted: var(--surface-hover);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-field: var(--field);
+  --color-indicator: var(--accent-indicator);
+  --font-sans: var(--font-ui);
+  --font-serif: var(--font-display);
+  --font-mono: var(--font-code);
+  --text-xs: var(--text-label);
+  --text-sm: var(--text-ui);
+  --text-base: var(--text-body);
+  /* Every control scale resolves to the control radius. Surface radii opt
+     out by name: rounded-xl for the attached dock, rounded-2xl for the floating
+     panel; rounded-popover follows the menu radius. An unadorned shadcn primitive therefore lands on the control radius
+     without the author having to remember which name is safe. */
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-control);
+  --radius-xl: var(--radius-dock);
+  --radius-2xl: var(--radius-panel);
+  --radius-popover: var(--radius-menu);
+  --shadow-xs: var(--shadow-control);
+  --shadow-sm: var(--shadow-control);
+  --shadow-md: var(--shadow-floating);
+  --shadow-popover: var(--glass-shadow);
+  --animate-working: working var(--motion-breathe) ease-in-out infinite;
+  @keyframes working { 50% { opacity: .5; } }
+}
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; font-family: var(--font-ui); }
+  button, [role=button] { @apply cursor-pointer; }
+  button:disabled { @apply cursor-default; }
+  /* One icon stroke for the whole interface. The engine's icons sit outside a
+     button and keep their own scene vocabulary, so this stops at our controls.
+     A declaration beats the SVG presentation attribute lucide writes, so the
+     1.5 here is what actually renders, not a second opinion about it. */
+  :is(button, [role=button], [role=menuitemradio], nav, [data-slot=radio-group]) svg { stroke-width: var(--stroke-icon); }
+}
+[data-slot=popover-content], [data-slot=select-content], [data-slot=tooltip-content] {
+  z-index: var(--layer-popup);
+  animation-duration: var(--motion-panel);
+  animation-timing-function: var(--ease-out);
+}
+[data-slot=button], [data-slot=select-trigger], [data-slot=input], [data-slot=textarea] {
+  transition-duration: var(--motion-fast);
+  transition-timing-function: var(--ease-out);
+}
+[data-slot=button][aria-pressed=true] { color: var(--accent-foreground); background: var(--accent); }

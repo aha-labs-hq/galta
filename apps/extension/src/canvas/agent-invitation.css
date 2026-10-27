@@ -1,0 +1,5 @@
+.agent-invitation { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.agent-invitation-target { position: absolute; pointer-events: none; margin: 0; padding: 0; border: 0; background: none; color: transparent; font-size: 0; }
+.agent-invitation-target:focus-visible { outline: none; background: #00000008; border-radius: var(--radius-control); }
+.galta-canvas[data-guide-action] canvas { cursor: pointer !important; }
+@media (forced-colors: active) { .agent-invitation-target:focus-visible { outline: var(--focus-width) solid Highlight; } }

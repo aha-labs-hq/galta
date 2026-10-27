@@ -1,0 +1,18 @@
+/* PopoverContent supplies Glass; palettes own their spacing and layout. */
+.drawing-popover { padding: var(--space-2); }
+.tool-palette { width: var(--drawing-palette-width); max-width: var(--radix-popover-content-available-width); max-height: var(--radix-popover-content-available-height); overflow-y: auto; overscroll-behavior: contain; }
+.tool-palette-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); }
+.tool-choice { display: grid; grid-template-columns: var(--icon-small) minmax(0, 1fr) var(--icon-disclosure); gap: var(--space-1); height: var(--target); min-width: 0; padding-inline: var(--space-2); color: var(--foreground); font-size: var(--text-label); font-weight: 400; text-align: left; }
+.tool-choice > svg { width: var(--icon-small); height: var(--icon-small); color: var(--muted-foreground); }
+.tool-choice:hover { background: var(--menu-hover); }
+.tool-choice[data-slot=button][aria-pressed=true] { color: var(--foreground); background: var(--menu-selected); }
+.tool-choice[data-slot=button]:focus-visible { color: var(--foreground); background: var(--surface-focus); }
+.tool-choice-status { display: grid; place-items: center; }
+.tool-choice-status > * { grid-area: 1 / 1; }
+.tool-choice kbd { color: var(--muted-foreground); font-family: var(--font-ui); font-size: var(--text-caption); font-weight: 400; }
+.tool-choice-status svg { width: var(--icon-disclosure); height: var(--icon-disclosure); opacity: 0; }
+.tool-choice[aria-pressed=true] .tool-choice-status svg { opacity: 1; }
+.tool-choice[aria-pressed=true] kbd { visibility: hidden; }
+.tool-choice[aria-pressed=true] > svg { color: var(--foreground); }
+.tool-selection { min-width: 0; margin: var(--space-3) var(--space-1) 0; padding: 0; border: 0; }
+.tool-selection-label { margin: 0 0 var(--space-1); color: var(--muted-foreground); font-size: var(--text-caption); }

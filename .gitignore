@@ -1,0 +1,54 @@
+# Dependencies and generated output
+node_modules/
+dist/
+apps/extension/release/
+*.tsbuildinfo
+packages/*/src/*.js
+packages/*/src/*.d.ts
+native/adapters/codex/galta-codex-bridge
+native/bridge/galta-canvas-bridge
+native/mcp/galta-mcp
+native/companion/galta-runtime
+.*.bun-build
+__pycache__/
+
+# Local test runs and machine state
+.wrangler/
+output/
+test-results/
+playwright-report/
+blob-report/
+.DS_Store
+*.log
+
+# Local credentials; checked-in examples must use placeholders
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+distribution/*.local.json
+
+# Binaries and media this repository does not publish
+*.jpeg
+*.gif
+*.mov
+*.wav
+*.mp3
+*.aac
+*.m4a
+*.zip
+*.gz
+*.tar
+*.pdf
+*.dmg
+*.woff
+*.woff2
+*.ttf
+*.otf
+*.icns
+*.sqlite
+*.bin

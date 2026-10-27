@@ -1,0 +1,25 @@
+name: Close pull requests
+
+# Galta does not accept pull requests (CONTRIBUTING.md). This runs on the
+# base repository's definition and never checks out the pull request's code.
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh pr close "$NUMBER" --repo "$REPOSITORY" --comment "$MESSAGE"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+          MESSAGE: >-
+            Thank you for taking the time. Galta does not accept pull requests,
+            so this one is closed automatically; see CONTRIBUTING.md. If it fixes
+            a bug or adds something you need, please open an issue describing
+            the problem instead.

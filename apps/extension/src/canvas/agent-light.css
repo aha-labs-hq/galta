@@ -1,0 +1,31 @@
+/* The agent's working light (agentLight.tsx). Its strokes are centred on the
+   outline and clipped to the shape, so each keeps its inner half: the wash
+   covers the band, the line is painted over it, and the edge stroke returns
+   the outermost step to the wash. Across the edge that leaves a darker step, a
+   pale line and a darker step, so the line is brighter than both sides of it
+   on graphite, on glass and on the canvas, and nothing outside is painted.
+   Along the edge it falls off from where the light is (`travel` moves it),
+   with no blur and no ends. */
+.agent-light-wash, .agent-light-line, .agent-light-edge { fill: none; stroke-linecap: round; }
+.agent-light-wash { stroke-width: calc(var(--agent-light-band) * 2); }
+.agent-light-line { stroke-width: calc((var(--agent-light-inset) + var(--agent-light-stroke)) * 2); }
+.agent-light-edge { stroke-width: calc(var(--agent-light-inset) * 2); }
+.agent-light-paint-wash stop { stop-color: var(--agent-light-wash); }
+.agent-light-paint-line stop { stop-color: var(--agent-light-line); }
+
+/* A faint trace of the same edge holds while work continues, so the state
+   reads in any still frame; the moving light carries it everywhere else. */
+.agent-light-hairline { opacity: .14; }
+.agent-light-hairline .agent-light-wash, .agent-light-hairline .agent-light-edge { stroke: var(--agent-light-wash); }
+.agent-light-hairline .agent-light-line { stroke: var(--agent-light-line); }
+
+/* Without motion the state remains: the outline holds its light, still. */
+@media (prefers-reduced-motion: reduce) {
+  .agent-light-glow { display: none; }
+  .agent-light-hairline { opacity: .7; }
+}
+@media (forced-colors: active) {
+  .agent-light-glow, .agent-light-hairline .agent-light-wash, .agent-light-hairline .agent-light-edge { display: none; }
+  .agent-light-hairline { opacity: 1; }
+  .agent-light-hairline .agent-light-line { stroke: CanvasText; }
+}

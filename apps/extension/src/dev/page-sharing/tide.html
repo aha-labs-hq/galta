@@ -1,0 +1,28 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tide</title><style>
+  *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;background:#0e1a23;color:#eef3f1;-webkit-font-smoothing:antialiased}
+  nav{position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:18px 44px;background:rgb(14 26 35/.8);backdrop-filter:blur(12px);font-size:14px}
+  nav b{font-size:17px;letter-spacing:.24em}nav span{color:#9fb3b0}
+  .hero{display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:24px;padding:20px 44px 56px}
+  h1{font-size:104px;line-height:.9;letter-spacing:-.05em;margin:0;font-weight:600}
+  .lead{font-size:22px;line-height:1.35;color:#b8cbc7;margin:20px 0 0;max-width:20ch}
+  .buy{display:inline-flex;align-items:center;gap:14px;margin-top:30px}
+  .buy a{padding:14px 24px;border-radius:999px;background:#e9c27c;color:#18120a;font-weight:600;text-decoration:none;font-size:15px}
+  .buy small{color:#9fb3b0;font-size:14px}
+  .hero img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:22px}
+  .row{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;padding:56px 44px}
+  .row figure{margin:0}.row img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:16px}
+  .row h3{margin:16px 0 6px;font-size:18px}.row p{margin:0;color:#9fb3b0;font-size:14.5px;line-height:1.5}
+  .band{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center;padding:40px 44px 72px}
+  .band img{width:100%;border-radius:22px}.band h2{font-size:44px;letter-spacing:-.03em;margin:0 0 14px}.band p{color:#b8cbc7;font-size:17px;line-height:1.55}
+  footer{padding:28px 44px;border-top:1px solid rgb(255 255 255/.08);color:#7d918e;font-size:13px}
+  </style></head><body>
+  <nav><b>TIDE</b><span>Story · Materials · Pre-order</span></nav>
+  <section class="hero"><div><h1>Tide</h1><p class="lead">A lamp that breathes like the sea.</p><div class="buy"><a href="#order">Pre-order</a><small>Ships in March</small></div></div><img src="{{fused}}" alt="The Tide lamp, glowing"></section>
+  <section class="row">
+    <figure><img src="{{shell}}" alt=""><h3>Shell form</h3><p>A ribbed spiral shade, drawn from the chambers of a nautilus.</p></figure>
+    <figure><img src="{{glaze}}" alt=""><h3>Sea-glass glaze</h3><p>Celadon over porcelain, pooled where the ribs run deep.</p></figure>
+    <figure><img src="{{jellyfish}}" alt=""><h3>A living glow</h3><p>Warm light that rises and falls, slow as breathing.</p></figure>
+  </section>
+  <section class="band"><img src="{{render}}" alt="Tide in sea-green ceramic"><div><h2>Two shades. One tide.</h2><p>Sea-green ceramic for the day; glass threads for the night. Both on a brushed brass stem and a base of pale stone.</p><div class="buy" id="order"><a href="#">Pre-order Tide</a></div></div></section>
+  <footer>Tide · Studio edition</footer>
+  </body></html>

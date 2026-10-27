@@ -1,0 +1,361 @@
+/* Galta's authoritative interface tokens. Artwork colors belong to the scene,
+   not this theme. Tailwind, shadcn and imperative canvas exports consume these. */
+:root, :host {
+  --background: #f7f7f7;
+  --foreground: #252525;
+  --surface: #ffffff;
+  --surface-glass: color-mix(in srgb, var(--surface) 94%, transparent);
+  --surface-glass-panel: color-mix(in srgb, var(--surface) 84%, transparent);
+  --surface-hover: #eeeeee;
+  --surface-pressed: #e5e5e5;
+  --surface-focus: #dedede;
+  /* Glass simulates a rounded rim with edge light, a directional wash and depth.
+     Each floating surface owns one blur; its children only carry ink or tint. */
+  --glass-wash:
+    radial-gradient(110% 88% at 4% 0%, rgb(255 255 255 / .68) 0%, rgb(255 255 255 / .26) 54%, rgb(255 255 255 / 0%) 100%),
+    linear-gradient(155deg, rgb(255 255 255 / .56) 0%, rgb(255 255 255 / .3) 50%, rgb(229 229 229 / .48) 100%);
+  --glass-base: rgb(247 247 247 / .28);
+  /* Compact supporting text needs a denser base over dark artwork. */
+  --glass-control-base: color-mix(in srgb, var(--surface) 98%, transparent);
+  --glass-edge: rgb(255 255 255 / .82);
+  --glass-filter: blur(28px) saturate(1.12);
+  --glass-elevation: 0 12px 34px rgb(25 25 25 / .13);
+  --glass-shadow: 0 0 0 1px var(--glass-edge) inset, var(--glass-elevation);
+  --glass-sheet-wash: linear-gradient(180deg, rgb(255 255 255 / .1), rgb(255 255 255 / .02) 22%, rgb(236 236 236 / .16) 100%);
+  --glass-header-wash:
+    radial-gradient(90% 160% at 0% 0%, rgb(255 255 255 / .74), rgb(255 255 255 / 0%) 78%),
+    linear-gradient(180deg, rgb(255 255 255 / .6), rgb(255 255 255 / .28));
+  --glass-header-shadow: inset 0 1px 0 rgb(255 255 255 / .94);
+  --glass-rule: linear-gradient(90deg, transparent, rgb(75 75 75 / .08) 20%, rgb(75 75 75 / .08) 80%, transparent);
+  --glass-hover: rgb(255 255 255 / .4);
+  /* Interaction tints sit on the glass without adding another material. */
+  --menu-selected: color-mix(in srgb, var(--surface-hover) 26%, transparent);
+  --menu-hover: color-mix(in srgb, var(--surface-hover) 32%, transparent);
+  --stroke-surface: 1px;
+  /* Resting canvas controls blend into blank paper and soften artwork below. */
+  --chrome-surface: color-mix(in srgb, var(--background) 72%, transparent);
+  --chrome-foreground: #3b3b3b;
+  --chrome-muted: #535353;
+  --chrome-blur: 14px;
+  --field: #f2f2f2;
+  --muted-foreground: #6b6b6b;
+  --border: #e7e7e7;
+  --border-strong: #a3a3a3;
+  --primary: var(--graphite-base);
+  --primary-foreground: var(--graphite-foreground);
+  --primary-wash: var(--graphite-wash);
+  --primary-edge-shadow: var(--graphite-edge-shadow);
+  /* Graphite controls leave colour to the artwork and semantic status. */
+  --accent: #eaeaea;
+  --accent-foreground: #252525;
+  --accent-indicator: #929292;
+  --destructive: #b63832;
+  /* The quiet destructive states: a field holding an error, and a destructive
+     row under the pointer. Both are a 10% wash, always beside text. */
+  --field-invalid: color-mix(in srgb, var(--destructive) 10%, var(--field));
+  --destructive-wash: color-mix(in srgb, var(--destructive) 10%, var(--surface));
+  --popover: var(--surface);
+  --ring: #646464;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: Georgia, "Times New Roman", serif;
+  --font-code: "SFMono-Regular", Consolas, monospace;
+  --text-caption: 11px;
+  --text-label: 12px;
+  --text-ui: 13px;
+  --text-body: 14px;
+  --text-input: 16px;
+  --text-brand: 28px;
+  --leading-ui: 1.4;
+  --leading-reading: 1.65;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-control: 8px;
+  --radius-panel: 16px;
+  /* Four pixels of menu inset around an eight-pixel control. */
+  --radius-menu: calc(var(--radius-control) + var(--space-1));
+  --radius-mark: 2px;
+  --radius-preview: 2px;
+  /* The attached composer turns with the radius of its expanded conversation
+     sheet, so one surface never shows two corner sizes. */
+  --radius-dock: 8px;
+  --graphite-base: #242424;
+  --graphite-foreground: #f5f5f5;
+  --graphite-muted: #b5b5b5;
+  --graphite-hover: #383838;
+  --graphite-border: #484848;
+  --graphite-scrim: color-mix(in srgb, var(--graphite-base) 88%, transparent);
+  /* One dense material for instruments, solid actions and compact help.
+     sRGB and constant alpha keep CSS premultiplied interpolation identical to
+     SVG's straight interpolation on the attached dock. */
+  --graphite-wash-strength: .06;
+  --graphite-light: rgb(255 255 255 / var(--graphite-wash-strength));
+  --graphite-shade: rgb(0 0 0 / var(--graphite-wash-strength));
+  --graphite-wash: linear-gradient(180deg in srgb, var(--graphite-light), var(--graphite-shade));
+  --graphite-wash-opacity: 1;
+  --graphite-edge-light: rgb(255 255 255 / .14);
+  --graphite-edge-shade: rgb(0 0 0 / .24);
+  --graphite-edge-shadow: inset 0 var(--stroke-surface) 0 var(--graphite-edge-light), inset 0 calc(var(--stroke-surface) * -1) 0 var(--graphite-edge-shade);
+  --graphite-shadow: var(--graphite-edge-shadow), 0 2px 4px rgb(0 0 0 / .04), 0 6px 16px rgb(0 0 0 / .06);
+  /* An agent at work is the one status the interface lights. One cool light,
+     nearly neutral and never a spectrum: the dock's edge lit from within, a
+     pale line `inset` from the edge inside a darker wash `band` wide, so it is
+     brighter than either side of it on graphite and on glass alike. Reach is
+     how far along the edge it fades to nothing. */
+  --agent-light-line: oklch(.96 .018 258);
+  --agent-light-wash: oklch(.56 .06 258);
+  --agent-light-stroke: 1px;
+  --agent-light-inset: 1px;
+  --agent-light-band: 3px;
+  --agent-light-reach: 150px;
+  --radius-round: 999px;
+  --shadow-control: 0 1px 2px #00000006, 0 4px 14px #00000005;
+  --shadow-floating: 0 2px 5px #00000006, 0 12px 32px #0000000a;
+  /* Selection popovers sit close to the artwork. Their Glass face is shared;
+     only the resting edge and elevation are quieter than a full dialog. */
+  --selection-edge: var(--border);
+  --selection-shadow: var(--shadow-floating);
+  --focus-width: 2px;
+  --target: 40px;
+  --target-compact: 32px;
+  --icon: 20px;
+  --icon-small: 16px;
+  --icon-disclosure: 12px;
+  --icon-model: 14px;
+  --stroke-icon: 1.5;
+  --drawing-palette-width: 240px;
+  --drawing-style-width: 288px;
+  --drawing-label-width: 72px;
+  --drawing-swatch: 20px;
+  --drawing-swatch-border: color-mix(in srgb, var(--foreground) 12%, transparent);
+  --choice-selected-surface: var(--field);
+  --choice-selected-ink: var(--foreground);
+  --canvas-gutter: 24px;
+  --composer-width: 560px;
+  --composer-bottom: 0px;
+  --toast-width: 300px;
+  --runtime-menu-width: 288px;
+  /* Text begins after the leading mark and its gutter on every menu row. */
+  --runtime-menu-text-inset: calc(var(--icon-model) + var(--space-2) * 2);
+  --runtime-menu-list-mask: linear-gradient(to bottom, transparent, #000 var(--space-2), #000 calc(100% - var(--space-2)), transparent);
+  --runtime-usage-width: 64px;
+  --runtime-usage-stroke: 2px;
+  /* The Time Machine ruler: one tick per moment at an even pitch that never
+     encodes time or size; a pause between sessions widens the gap. Ticks rise
+     from `rest` to `peak` in a symmetric fan around the playhead, `fan` wide
+     on each side, so the moment under it is the tallest and darkest. Other
+     timelines run as strands `lane` apart above the line. */
+  --history-tick-gap: 8px;
+  --history-session-gap: 16px;
+  --history-tick-rest: 6px;
+  --history-tick-peak: 26px;
+  --history-fan: 30px;
+  --history-ruler-height: 52px;
+  --history-lane: 6px;
+  --history-handle-stroke: 2px;
+  --history-handle-cap: 4px;
+  --history-menu-width: 280px;
+  /* ObjectLabels: every page's browser bar and its dots, in page pixels (the
+     bar scales with the page), and the narrowest object words are drawn beside. */
+  --object-label-bar-height: 40px;
+  --object-label-dot: 5px;
+  --object-label-min-width: 160px;
+  /* Above Excalidraw's scene controls; menus share one portalled layer. */
+  --layer-history: 1200;
+  --layer-tools: 1300;
+  --layer-context: 1400;
+  --layer-conversation: 1500;
+  --layer-notice: 1600;
+  --layer-header: 1700;
+  --layer-popup: 20000;
+  /* The mark is drawn on other people's pages, in a shadow root that inlines
+     this file as text. Its ink and paper are the artwork's own colours, not
+     theme values: a theme change must not rewrite the character, and no surface
+     token may be substituted for them. The ring is a SCREEN-space length rather
+     than an artwork length, so the edge stays one width at every size the mark
+     is drawn — an edge measured in the artwork would vanish at control size. */
+  --mark-ink: #000000;
+  --mark-paper: #ffffff;
+  --mark-ring: 2px;
+  /* The clearance the ring needs around the artwork is artwork geometry, not a
+     theme value: it is baked into the viewBox and lives with the mark in
+     `marks/geometry.ts` as BREATH, so it is deliberately absent here. */
+  /* The mark as a control. */
+  --mark-size: 34px;
+  --motion-fast: 140ms;
+  --motion-panel: 200ms;
+  --motion-scroll: 360ms;
+  --motion-status: 440ms;
+  --motion-shimmer: 440ms;
+  --motion-breathe: 1800ms;
+  --motion-caret: 1060ms;
+  --motion-feedback: 320ms;
+  --motion-view-exit: calc(var(--motion-disclosure) * .4);
+  /* The reading sheet rises out of the composer and settles back into it;
+     disclosures open on the same curve. Exits are shorter than entries. */
+  --motion-sheet: 420ms;
+  --motion-sheet-exit: 280ms;
+  --motion-disclosure: 260ms;
+  --motion-disclosure-exit: 200ms;
+  /* Contents fade inside a moving frame: they wait for the first part of an
+     entrance, and are gone by this part of an exit. */
+  --motion-contents-lead: .15;
+  --motion-contents-exit: .55;
+  /* Following new output glides one line at a time instead of jumping. */
+  --motion-follow: 220ms;
+  /* A requested camera flight to the agent's work: its duration grows with the
+     path's length per unit, within these bounds. A located change keeps this
+     much screen clear around it. */
+  --motion-flight-unit: 520ms;
+  --motion-flight-min: 420ms;
+  --motion-flight-max: 1100ms;
+  --locate-margin: 56px;
+  /* The agent's light around a change: its trace, then its whole life. */
+  --motion-mark-draw: 560ms;
+  --motion-mark: 1800ms;
+  /* The agent light's pace along the dock's outline, in CSS pixels per second,
+     the same around the composer and the open sheet; and its fade when work
+     ends. */
+  --motion-orbit-pace: 150;
+  --motion-trace-fade: 480ms;
+  /* Time Machine plays one moment per step, settles the ruler on a moment in
+     `snap`, and lets a flung ruler slow down with the `glide` time constant.
+     A settled step dissolves from the frame before in `dissolve`, or, when it
+     only moved objects, glides them to their new places in `move`; the camera
+     reaches a change out of view in `follow`; travelling to another timeline
+     rearranges the ruler in `travel`. */
+  --motion-history-step: 160ms;
+  --motion-history-snap: 240ms;
+  --motion-history-glide: 325ms;
+  --motion-history-dissolve: 140ms;
+  --motion-history-move: 240ms;
+  --motion-history-follow: 420ms;
+  --motion-history-travel: 360ms;
+  --ease-out: cubic-bezier(.2,.8,.2,1);
+  --ease-sheet: cubic-bezier(.32,.72,0,1);
+  --ease-settle: cubic-bezier(.4,0,.2,1);
+  /* A small overshoot for an object that lands, such as the signed-in avatar. */
+  --ease-spring: cubic-bezier(.34,1.42,.64,1);
+}
+[data-theme="graphite"] {
+  --foreground: var(--graphite-foreground);
+  --background: var(--graphite-base);
+  --surface: var(--graphite-base);
+  --surface-hover: var(--graphite-hover);
+  --surface-pressed: #414141;
+  --surface-focus: #505050;
+  --surface-glass-panel: color-mix(in srgb, var(--surface) 90%, transparent);
+  --field: #303030;
+  --muted-foreground: var(--graphite-muted);
+  --border: var(--graphite-border);
+  --primary: var(--graphite-foreground);
+  --primary-foreground: var(--graphite-base);
+  --primary-wash: none;
+  --primary-edge-shadow: none;
+  --border-strong: #858585;
+  --destructive: #ffaaa1;
+  --ring: #d0d0d0;
+}
+:root, :host, [data-theme="graphite"] {
+  --primary-focus: color-mix(in srgb, var(--primary) 78%, var(--primary-foreground));
+}
+@media (pointer: coarse) { :root, :host { --target: 44px; --target-compact: 44px; --history-tick-gap: 10px; } }
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  :root, :host {
+    --graphite-scrim: var(--graphite-base);
+    --graphite-wash: none;
+    --graphite-wash-opacity: 0;
+    --graphite-edge-light: var(--border-strong);
+    --graphite-edge-shade: var(--border-strong);
+    --graphite-edge-shadow: inset 0 0 0 var(--stroke-surface) var(--graphite-edge-light);
+    --graphite-shadow: var(--graphite-edge-shadow);
+    --runtime-menu-list-mask: none;
+    --glass-wash: none;
+    --glass-base: var(--surface);
+    --glass-control-base: var(--surface);
+    --glass-edge: var(--border-strong);
+    --glass-filter: none;
+    --glass-shadow: none;
+    --glass-elevation: none;
+    --glass-sheet-wash: none;
+    --glass-header-wash: none;
+    --glass-header-shadow: none;
+    --glass-rule: linear-gradient(var(--border-strong), var(--border-strong));
+    --glass-hover: var(--surface-hover);
+    --selection-edge: var(--border-strong);
+    --selection-shadow: none;
+  }
+}
+@media (forced-colors: active) {
+  :root, :host {
+    --graphite-base: Canvas;
+    --graphite-foreground: CanvasText;
+    --graphite-muted: CanvasText;
+    --graphite-border: CanvasText;
+    --graphite-scrim: Canvas;
+    --graphite-wash: none;
+    --graphite-wash-opacity: 0;
+    --graphite-edge-light: CanvasText;
+    --graphite-edge-shade: CanvasText;
+    --graphite-edge-shadow: none;
+    --graphite-shadow: none;
+    --primary: ButtonFace;
+    --primary-foreground: ButtonText;
+    --runtime-menu-list-mask: none;
+    --glass-wash: none;
+    --glass-base: Canvas;
+    --glass-control-base: Canvas;
+    --glass-edge: CanvasText;
+    --glass-filter: none;
+    --glass-shadow: none;
+    --glass-elevation: none;
+    --glass-sheet-wash: none;
+    --glass-header-wash: none;
+    --glass-header-shadow: none;
+    --glass-rule: linear-gradient(CanvasText, CanvasText);
+    --choice-selected-surface: Highlight;
+    --choice-selected-ink: HighlightText;
+    --selection-edge: CanvasText;
+    --selection-shadow: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root, :host { --motion-fast: 0ms; --motion-panel: 0ms; --motion-scroll: 0ms; --motion-sheet: 0ms; --motion-sheet-exit: 0ms; --motion-disclosure: 0ms; --motion-disclosure-exit: 0ms; --motion-follow: 0ms; --motion-history-snap: 0ms; --motion-history-glide: 0ms; --motion-history-dissolve: 0ms; --motion-history-move: 0ms; --motion-history-follow: 0ms; --motion-history-travel: 0ms; }
+}
+
+/* One material recipe; floating primitives provide their own geometry. */
+.selection-popover {
+  --glass-edge: var(--selection-edge);
+  --glass-shadow: var(--selection-shadow);
+}
+@utility glass-surface {
+  border: var(--stroke-surface) solid var(--glass-edge);
+  background-color: var(--glass-control-base);
+  background-image: var(--glass-wash);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-filter);
+}
+
+/* Geometry and floating elevation belong to the surface role, not the face. */
+@utility graphite-surface {
+  background-color: var(--graphite-base);
+  background-image: var(--graphite-wash);
+  box-shadow: var(--graphite-edge-shadow);
+  @media (forced-colors: active) {
+    outline: var(--stroke-surface) solid CanvasText;
+    outline-offset: calc(var(--stroke-surface) * -1);
+  }
+}
+@utility primary-surface {
+  background-color: var(--primary);
+  background-image: var(--primary-wash);
+  box-shadow: var(--primary-edge-shadow);
+  @media (forced-colors: active) {
+    outline: var(--stroke-surface) solid ButtonText;
+    outline-offset: calc(var(--stroke-surface) * -1);
+  }
+}

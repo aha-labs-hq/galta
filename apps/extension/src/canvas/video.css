@@ -1,0 +1,22 @@
+@reference "../styles.css";
+
+.excalidraw .canvas-video { position: relative; width: 100%; height: 100%; overflow: hidden; container-type: inline-size; background: var(--graphite-base); color: var(--graphite-foreground); }
+.canvas-video > video, .canvas-video > img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.canvas-video > video:focus-visible { outline: var(--focus-width) solid var(--graphite-foreground); outline-offset: calc(var(--space-1) * -1); }
+.canvas-video-play { position: absolute; inset: 0; display: grid; place-content: center; pointer-events: none; }
+.canvas-video-play svg { @apply graphite-surface; width: clamp(28px, 16cqi, 52px); height: clamp(28px, 16cqi, 52px); padding: clamp(7px, 4.3cqi, 14px); border-radius: var(--radius-round); box-sizing: border-box; }
+.canvas-video-duration { @apply graphite-surface; position: absolute; right: var(--space-3); bottom: var(--space-3); padding: 3px 7px; border-radius: var(--space-1); font: var(--text-label)/var(--leading-ui) var(--font-ui); font-variant-numeric: tabular-nums; pointer-events: none; }
+.canvas-video-error { position: absolute; inset: 0; display: flex; flex-direction: column; gap: var(--space-2); align-items: center; justify-content: center; background: var(--graphite-scrim); font: var(--text-ui)/var(--leading-ui) var(--font-ui); }
+.canvas-video-error button { @apply graphite-surface; display: flex; align-items: center; justify-content: center; gap: var(--space-2); min-height: var(--target); padding: 0 var(--space-3); border: 0; border-radius: var(--radius-control); color: inherit; cursor: pointer; font: inherit; }
+.canvas-video-error button svg { width: var(--icon-small); height: var(--icon-small); }
+.canvas-video-error button:active { background-color: var(--graphite-hover); }
+@media (hover: hover) { .canvas-video-error button:hover { background-color: var(--graphite-hover); } }
+/* Recovery uses one lighter focus face and keeps only the material's rim.
+   Focus wins when the pointer is still over the keyboard-focused control. */
+.canvas-video-error button:focus-visible { outline: none; box-shadow: var(--graphite-edge-shadow); background-color: var(--surface-focus); }
+@media (forced-colors: active) { .canvas-video-error button:focus-visible { outline: var(--focus-width) solid Highlight; outline-offset: calc(var(--focus-width) * -1); } }
+@container (max-width: 160px) { .canvas-video-duration { right: 6px; bottom: 6px; } .canvas-video-play svg { padding: 8px; } }
+
+/* The engine's reserved media link is routing, not a user-editable URL. */
+.excalidraw:has(.canvas-video[data-selected="true"]) .excalidraw-hyperlinkContainer,
+.excalidraw:has(.canvas-video[data-selected="true"]) .context-menu li[data-testid="hyperlink"] { display: none; }

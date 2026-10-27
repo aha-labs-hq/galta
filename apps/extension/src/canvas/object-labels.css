@@ -1,0 +1,27 @@
+/* A page's browser bar and the words beside a page, image or video
+   (ObjectLabels). The layer shares the engine's canvas layer and follows it in
+   order: over drawn artwork, under pages, videos and the selection. */
+.object-labels { position: absolute; inset: 0; z-index: var(--zIndex-canvas); overflow: hidden; pointer-events: none; }
+.object-label { position: absolute; container-type: inline-size; }
+/* Every page's bar is part of the page: drawn at page size on its top edge and
+   scaled with the camera, so it zooms with the page and never reaches what sits
+   above it. The page's own border closes it. */
+.object-label-bar { position: absolute; bottom: 100%; left: 0; display: grid; width: calc(100% / var(--object-label-zoom)); height: var(--object-label-bar-height); grid-template-columns: 1fr minmax(0, auto) 1fr; align-items: center; gap: var(--space-4); padding-inline: var(--space-4); border: var(--stroke-surface) solid var(--border); border-bottom: 0; border-radius: var(--radius-control) var(--radius-control) 0 0; background: var(--surface); color: var(--border-strong); transform: scale(var(--object-label-zoom)); transform-origin: 0 100%; }
+.object-label-dots { display: flex; justify-self: start; gap: var(--object-label-dot); }
+.object-label-dots i { width: var(--object-label-dot); height: var(--object-label-dot); border-radius: var(--radius-round); background: var(--border); }
+.object-label-file { min-width: 0; overflow: hidden; font: 400 var(--text-input)/1 var(--font-code); text-overflow: ellipsis; white-space: nowrap; }
+.object-label-bar svg { justify-self: end; width: var(--icon-small); height: var(--icon-small); stroke-width: var(--stroke-icon); }
+/* Words keep reading size at every zoom: the title above (and above a page's
+   bar), the caption below. */
+.object-label-title { position: absolute; right: 0; bottom: calc(100% + var(--space-2)); left: 0; display: flex; min-width: 0; align-items: center; gap: var(--space-2); color: var(--muted-foreground); font: 400 var(--text-label)/var(--leading-ui) var(--font-ui); }
+.object-label[data-kind=page] .object-label-title { bottom: calc(100% + var(--object-label-bar-height) * var(--object-label-zoom) + var(--space-2)); }
+.object-label-title svg { flex: none; width: var(--icon-model); height: var(--icon-model); color: var(--border-strong); stroke-width: var(--stroke-icon); }
+.object-label-name { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.object-label-spec { flex: none; font-size: var(--text-caption); font-variant-numeric: tabular-nums; }
+.object-label-caption { position: absolute; top: 100%; right: 0; left: 0; display: -webkit-box; margin: var(--space-3) 0 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: var(--muted-foreground); font: 400 var(--text-ui)/var(--leading-ui) var(--font-ui); overflow-wrap: anywhere; }
+/* On a narrow object the name keeps the room; the width or length goes first. */
+@container (max-width: 240px) { .object-label-spec { display: none; } }
+@media (forced-colors: active) {
+  .object-label-bar { border-color: CanvasText; }
+  .object-label-dots i { background: CanvasText; }
+}

@@ -1,0 +1,30 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "baseUrl": ".",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "jsx": "react-jsx",
+    "types": ["chrome", "react", "react-dom"],
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/*"],
+      "@galta/canvas": ["../../packages/canvas/src/index.ts"],
+      "@galta/domain": ["../../packages/domain/src/index.ts"],
+      "@galta/runtime": ["../../packages/runtime/src/index.ts"],
+      "@galta/capture": ["../../packages/capture/src/index.ts"],
+      "@galta/storage": ["../../packages/storage/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "references": [
+    { "path": "../../packages/canvas" },
+    { "path": "../../packages/domain" },
+    { "path": "../../packages/runtime" },
+    { "path": "../../packages/capture" },
+    { "path": "../../packages/storage" }
+  ]
+}

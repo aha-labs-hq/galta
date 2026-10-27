@@ -1,0 +1,13 @@
+/* A held place: a faint area in the agent's light whose edge carries the
+   working light (agent-light.css). It arrives softly and never covers the
+   artwork beneath it. */
+.canvas-slot { position: absolute; z-index: 1; overflow: visible; pointer-events: none; animation: canvas-slot-in var(--motion-status) var(--ease-out) both; }
+.canvas-slot rect { rx: var(--radius-control); }
+.canvas-slot-tint { fill: var(--agent-light-wash); opacity: .06; }
+@keyframes canvas-slot-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .canvas-slot { animation: none; }
+}
+@media (forced-colors: active) {
+  .canvas-slot-tint { display: none; }
+}

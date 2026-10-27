@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": { "composite": false, "declaration": false, "noEmit": true, "types": ["bun", "chrome"], "typeRoots": ["../node_modules/@types", "../apps/extension/node_modules/@types"], "lib": ["ESNext", "DOM", "DOM.Iterable", "DOM.AsyncIterable"] },
+  "include": ["package-macos.ts", "release.ts", "preview-companion.ts", "verify-companion.ts", "verify-package.ts", "verify-package-upgrade.ts", "evaluate-agent.ts", "verify-canvas-intent.ts", "verify-canvas-perception.ts", "diagnose-canvas-vision.ts", "review-canvas-vision.ts", "render-brand-assets.ts", "verify-unified-mcp.ts", "verify-codex-ui-live.ts", "lib/agent-evaluation.ts", "lib/canvas-intent-*.ts", "distribution/**/*.ts", "../apps/extension/src/env.d.ts"]
+}

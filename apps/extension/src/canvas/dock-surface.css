@@ -1,0 +1,28 @@
+/* Both layers draw past their boxes, where the shoulders reach outside the
+   sides. The body covers the composer from its top edge down, so its edge and
+   the sheet's lower edge are the same layout line (DockSurface sets its
+   height). The light covers the whole dock. The body lies beneath every dock
+   surface; the light, painted after them, lies on top. */
+.dock-surface, .dock-trace { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.dock-surface { top: auto; height: 0; z-index: -1; }
+.dock-surface-fill { fill: var(--graphite-base); }
+/* The same wash and inner rim as CSS Graphite surfaces, painted on the exact
+   attached silhouette. Clipping twice the stroke leaves one stroke inside it.
+   The rim's crown fades as the sheet arrives over it (DockSurface sets its
+   opacity), so the seam between them carries no line. */
+.dock-surface { color-interpolation: sRGB; }
+.graphite-wash-light { stop-color: var(--graphite-light); }
+.graphite-wash-shade { stop-color: var(--graphite-shade); }
+.graphite-edge-light { stop-color: var(--graphite-edge-light); }
+.graphite-edge-shade { stop-color: var(--graphite-edge-shade); }
+.dock-surface-wash { fill: var(--dock-graphite-wash); opacity: var(--graphite-wash-opacity); }
+.dock-surface-edge { fill: none; stroke: var(--dock-graphite-edge); stroke-width: calc(var(--stroke-surface) * 2); }
+
+/* The light fades in and out as work starts and ends. */
+.dock-trace { opacity: 0; visibility: hidden; transition: opacity var(--motion-trace-fade) var(--ease-out), visibility 0s linear var(--motion-trace-fade); }
+.dock-trace[data-working=true] { opacity: 1; visibility: visible; transition: opacity var(--motion-trace-fade) var(--ease-out); }
+
+/* Without motion the outline holds its light, still (agent-light.css). */
+@media (prefers-reduced-motion: reduce) {
+  .dock-trace { transition: none; }
+}

@@ -1,0 +1,11 @@
+.style-choices { --choice-gap: calc(var(--space-1) / 2); position: relative; isolation: isolate; display: flex; min-width: 0; flex: 1; gap: var(--choice-gap); padding: var(--choice-gap); border-radius: var(--radius-control); }
+.style-choice-indicator { position: absolute; top: var(--choice-gap); bottom: var(--choice-gap); left: var(--choice-gap); border-radius: calc(var(--radius-control) - var(--choice-gap)); background: var(--choice-selected-surface); pointer-events: none; }
+.style-choices[data-pointer-motion=true] .style-choice-indicator { transition: transform var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out); }
+.style-choices > button { position: relative; flex: 1; min-width: 0; padding-inline: var(--space-1); border-radius: calc(var(--radius-control) - var(--choice-gap)); font-size: var(--text-label); font-weight: 400; color: var(--muted-foreground); }
+.style-choices > button[data-slot=button][aria-pressed=true] { background: transparent; color: var(--choice-selected-ink); }
+.style-choices > button[data-slot=button]:focus-visible { background: var(--surface-focus); color: var(--foreground); }
+.style-choices svg { width: var(--icon-small); height: var(--icon-small); }
+@media (forced-colors: active) {
+  .style-choice-indicator { forced-color-adjust: none; }
+  .style-choices > button[data-slot=button][aria-pressed=true]:not(:focus-visible) { color: var(--choice-selected-ink); forced-color-adjust: none; }
+}

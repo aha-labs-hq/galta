@@ -1,0 +1,152 @@
+/* Adapter for Excalidraw's UI vocabulary. Canvas content styles remain owned
+   by the scene; only the engine's controls consume Galta's semantic tokens. */
+.galta-canvas .excalidraw {
+  --ui-font: var(--font-ui);
+  --color-primary: var(--accent-foreground);
+  --color-primary-darker: var(--accent-foreground);
+  --color-primary-darkest: var(--accent-foreground);
+  --color-primary-hover: var(--accent-foreground);
+  --color-primary-light: var(--accent);
+  --color-primary-light-darker: var(--accent);
+  --color-selection: var(--accent-indicator);
+  --color-danger: var(--destructive);
+  --color-brand-hover: var(--foreground);
+  --color-brand-active: var(--accent-foreground);
+  --color-on-primary-container: var(--accent-foreground);
+  --color-surface-primary-container: var(--accent);
+  --color-surface-lowest: var(--surface);
+  --color-surface-low: var(--background);
+  --color-surface-mid: var(--surface-hover);
+  --color-surface-high: var(--surface-pressed);
+  --color-on-surface: var(--foreground);
+  --color-border-outline: var(--border-strong);
+  --color-border-outline-variant: var(--border);
+  --island-bg-color: var(--surface);
+  --default-bg-color: var(--surface);
+  --text-primary-color: var(--foreground);
+  --popup-text-color: var(--foreground);
+  --popup-secondary-bg-color: var(--surface);
+  --select-highlight-color: var(--surface-hover);
+  --default-border-color: var(--border);
+  --input-bg-color: var(--field);
+  --input-border-color: transparent;
+  --input-hover-bg-color: var(--surface-hover);
+  --input-label-color: var(--muted-foreground);
+  --ExcTextField--background: var(--field);
+  --ExcTextField--border: transparent;
+  --ExcTextField--border-hover: transparent;
+  --ExcTextField--border-active: transparent;
+  --focus-highlight-color: var(--ring);
+  --keybinding-color: var(--muted-foreground);
+  --link-color: var(--foreground);
+  --color-slider-track: var(--surface-pressed);
+  --shadow-island: var(--shadow-floating);
+  --modal-shadow: var(--shadow-floating);
+  --border-radius-md: var(--radius-control);
+  --border-radius-lg: var(--radius-control);
+  /* The engine never defines this variable, so its own border-radius
+     declaration was dropped and every HTML embed rendered square. */
+  --embeddable-radius: var(--radius-control);
+  --button-special-active-bg-color: var(--surface-pressed);
+  --icon-green-fill-color: var(--foreground);
+  --color-success: var(--surface-hover);
+  --color-success-darker: var(--surface-pressed);
+  --color-success-darkest: var(--border);
+  --color-success-text: var(--foreground);
+  --color-success-contrast: var(--foreground);
+  --color-success-contrast-hover: var(--foreground);
+  --color-success-contrast-active: var(--foreground);
+  --color-badge: var(--foreground);
+  --background-color-badge: var(--surface-hover);
+}
+/* Toasts are canvas feedback, so they use the same surface, spacing and
+   elevation as Galta-owned notices instead of Excalidraw's default island. */
+.galta-canvas .excalidraw .Toast {
+  @apply glass-surface;
+  animation: galta-toast-in var(--motion-panel) var(--ease-out);
+  border-radius: var(--radius-panel);
+  bottom: auto;
+  top: calc(var(--header-height, 80px) + var(--space-4));
+  color: var(--foreground);
+  left: 50%;
+  margin-left: 0;
+  padding: var(--space-3) var(--space-4);
+  transform: translateX(-50%);
+  width: min(var(--toast-width), calc(100% - var(--space-8)));
+  z-index: var(--layer-notice);
+}
+.galta-canvas .excalidraw .Toast .Toast__message {
+  color: inherit;
+  font: 400 var(--text-ui)/var(--leading-ui) var(--font-ui);
+  margin: 0;
+  padding: 0;
+}
+.galta-canvas .excalidraw .Toast .close {
+  border-radius: var(--radius-control);
+  color: var(--muted-foreground);
+  padding: var(--space-1);
+  right: var(--space-1);
+  top: var(--space-1);
+}
+.galta-canvas .excalidraw .Toast .close:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.galta-canvas .excalidraw .Toast .close .ToolIcon__icon {
+  height: var(--icon-small);
+  width: var(--icon-small);
+}
+@keyframes galta-toast-in {
+  from { opacity: 0; transform: translate(-50%, calc(var(--space-2) * -1)); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+/* One Glass surface, shared with the shadcn menus: menu radius and compact
+   rows. The engine styles this menu with its own
+   vocabulary, so every value below is a deliberate mapping, not a preference.
+   Its popover wrapper keeps the 5px breathing room it adds around the menu and
+   stays transparent; material and elevation belong to the menu itself. */
+.galta-canvas .excalidraw .popover:has(> .context-menu) { z-index: var(--layer-popup); background: transparent; box-shadow: none; }
+.galta-canvas .excalidraw .context-menu { @apply glass-surface; max-height: min(70dvh, 560px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: var(--space-1); border-radius: var(--radius-menu); }
+.galta-canvas .excalidraw .context-menu-item { min-height: var(--target-compact); border-radius: var(--radius-control); padding-inline: var(--space-3); font: 400 var(--text-ui)/var(--leading-ui) var(--font-ui); }
+.galta-canvas .excalidraw .context-menu-item:hover { background: var(--surface-hover); color: var(--foreground); }
+.galta-canvas .excalidraw .context-menu-item.checkmark:before { left: var(--space-2); color: var(--accent-foreground); }
+.galta-canvas .excalidraw .context-menu-item.dangerous .context-menu-item__label { color: var(--destructive); }
+.galta-canvas .excalidraw .context-menu-item:hover.dangerous { background: var(--destructive-wash); color: var(--destructive); }
+.galta-canvas .excalidraw .context-menu-item:hover.dangerous .context-menu-item__label { color: var(--destructive); }
+.galta-canvas .excalidraw .context-menu-item .context-menu-item__label { margin-inline-end: var(--space-3); }
+.galta-canvas .excalidraw .context-menu-item .context-menu-item__shortcut { color: var(--muted-foreground); opacity: 1; font-size: var(--text-caption); }
+.galta-canvas .excalidraw .context-menu-item:hover.dangerous .context-menu-item__shortcut { color: var(--destructive); }
+.galta-canvas .excalidraw .context-menu-item-separator { border-color: var(--border); }
+/* The engine has its own focus shadows; replace them at the adapter, so the
+   shared focus treatment never combines with a second native halo. */
+.galta-canvas .excalidraw :is(button, .ToolIcon_type_button, .dropdown-select):focus-visible {
+  box-shadow: none;
+  background-color: var(--surface-focus);
+  outline: none;
+}
+.galta-canvas .excalidraw :is(input[type=text], textarea:not(.excalidraw-wysiwyg)):focus-visible {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+  background-color: var(--surface-focus);
+}
+.galta-canvas .excalidraw .ExcTextField__input:has(:focus-visible) { box-shadow: none; background-color: var(--surface-focus); }
+.galta-canvas .excalidraw .ExcTextField__input input:focus-visible { box-shadow: none; background: transparent; }
+.galta-canvas .excalidraw .ExcTextField__input input { font-family: var(--font-ui); }
+.galta-canvas .excalidraw:focus-visible,
+.galta-canvas .excalidraw textarea.excalidraw-wysiwyg:focus-visible { outline: none; box-shadow: none; background: transparent; }
+@media (forced-colors: active) {
+  .galta-canvas .excalidraw :is(button, .ToolIcon_type_button, .dropdown-select, input[type=text], textarea:not(.excalidraw-wysiwyg)):focus-visible,
+  .galta-canvas .excalidraw .ExcTextField__input:has(:focus-visible) { outline: 2px solid Highlight; outline-offset: -2px; }
+  .galta-canvas .excalidraw .ExcTextField__input input:focus-visible { outline: none; }
+}
+/* The engine writes `--embeddable-radius: 0px` inline on every embeddable
+   container, so a normal declaration here can never win and every HTML preview
+   rendered square at every size. This override is what actually applies; the
+   token exists so the value is not a literal. It also gives the preview a
+   Galta surface and border, so a document on the canvas never reads as another
+   artwork object. The border draws inside the frame's own box, so the embedded
+   document keeps its exact pixel size. */
+:is(.galta-canvas, .history-canvas) .excalidraw .excalidraw__embeddable-container { --embeddable-radius: var(--radius-control) !important; }
+:is(.galta-canvas, .history-canvas) .excalidraw .excalidraw__embeddable-container:has(.excalidraw__embeddable[data-framed]) { --embeddable-radius: 0 0 var(--radius-control) var(--radius-control) !important; }
+:is(.galta-canvas, .history-canvas) .excalidraw .excalidraw__embeddable { box-sizing: border-box; background: var(--surface); border: 1px solid var(--border); border-radius: var(--embeddable-radius); }

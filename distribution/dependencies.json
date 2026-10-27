@@ -1,0 +1,16 @@
+{
+  "sparkle": {
+    "version": "2.10.0",
+    "url": "https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-2.10.0.tar.xz",
+    "sha256": "c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c"
+  },
+  "codex": {
+    "version": "0.162.0-alpha.17.2",
+    "url": "https://github.com/openai/codex/releases/download/rust-v0.162.0-alpha.17.2/codex-package-aarch64-apple-darwin.tar.gz",
+    "sha256": "f05b8447bae71d556050fd4066ea4cd066a7b8881ca9c086b88215e7d3d76264"
+  },
+  "codexLicense": {
+    "url": "https://raw.githubusercontent.com/openai/codex/rust-v0.162.0-alpha.17.2/LICENSE",
+    "sha256": "d17f227e4df5da1600391338865ce0f3055211760a36688f816941d58232d8dc"
+  }
+}
