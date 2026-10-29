@@ -1,5 +1,9 @@
 /* Adapter for Excalidraw's UI vocabulary. Canvas content styles remain owned
    by the scene; only the engine's controls consume Galta's semantic tokens. */
+/* The paper and its grain, under the artwork. The engine draws the artwork on a transparent scene
+   (ExcalidrawCanvas.tsx, HistoryStage.tsx), so neither reaches an export, which sets its own
+   background (theme.ts). */
+:is(.galta-canvas, .history-canvas) .excalidraw { background: var(--paper-grain) 0 0 / var(--paper-grain-size), var(--background); }
 .galta-canvas .excalidraw {
   --ui-font: var(--font-ui);
   --color-primary: var(--accent-foreground);

@@ -6,18 +6,25 @@ import { videoData, editorFiles } from './video'
 import { inRegion, type CanvasRegion } from './observation'
 import { refreshRelationships } from './relationships'
 import { normalizeFreeDraw } from './freeDraw'
-import { CanvasPresentation } from './canvasPresentation'
+import { InkPresentation } from './inkPen'
 import { CanvasWork } from './canvasWork'
 import { flightPath, MAX_ZOOM, MIN_ZOOM, type CanvasView } from './flight'
 import { themeTime } from '../design/theme'
-import { cloneCanvasElement, cloneCanvasSnapshot } from './cloneSnapshot'
+import { cloneCanvasElement, cloneCanvasSnapshot, rememberSavedElement, saveCanvasSnapshot } from './cloneSnapshot'
 import { documentEquals } from './documentEquality'
-import { prepareToolSnapshot, renderToolPreview } from './toolScene'
+import { prepareToolSnapshot, renderToolPreview, type PreviewOverlay } from './toolScene'
 
 import { sceneDocument, validateSnapshot, type SceneSnapshot } from './sceneSnapshot'
 export { sceneDocument, validateSnapshot, type SceneSnapshot } from './sceneSnapshot'
 
 export type CanvasFrame = { left: number; top: number; width: number; height: number }
+/** The editor's copy of a restored element. Until the editor changes it, a
+ * capture is history's own object, so a new version shares it by identity. */
+function restored(copy: ExcalidrawElement, saved: ExcalidrawElement) {
+  const ready = normalizeFreeDraw(copy)
+  rememberSavedElement(saved, ready === copy ? copy : undefined)
+  return ready
+}
 function documentStamp(document: SceneSnapshot['document']): string {
   return document.elements.map(el => `${el.id}:${el.version}:${el.versionNonce}:${el.isDeleted}:${el.index}`).join('|')
 }
@@ -62,20 +69,28 @@ export class CanvasScene {
   get disposed() { return this.closed }
   set disposed(value: boolean) {
     this.closed = value
-    if (value) { this.urls.release(); this.resources = {}; this.zoomPreparation?.abort(); clearTimeout(this.zoomTimer) }
+    if (value) { this.urls.release(); this.resources = {}; this.zoomPreparation?.abort(); clearTimeout(this.zoomTimer); this.presentation?.dispose() }
   }
   restorationVersion = 0
   private observed = ''
   private observedFiles = new Map<string, string>()
   private restoredDocument: { saved: SceneSnapshot['document']; applied: string; files: CanvasAssets } | undefined
-  private presentation?: CanvasPresentation
+  private presentation?: InkPresentation
   private seen: (() => CanvasFrame) | undefined
-  constructor(readonly api: ExcalidrawImperativeAPI, presentation?: SVGSVGElement) {
-    if (presentation) this.presentation = new CanvasPresentation(api, presentation)
+  /** `editor` holds the engine. A scene without one presents nothing. */
+  constructor(readonly api: ExcalidrawImperativeAPI, editor?: HTMLElement) {
+    if (editor) this.presentation = new InkPresentation(api, editor)
   }
-  async present(elements: readonly ExcalidrawElement[], previous: { has(id: string): boolean }, work: CanvasWork) {
-    await this.presentation?.show(elements, previous, () => this.surface, work)
+  /** Land an edit's new work in turn. Presentation never decides an edit: if
+   * it fails, everything committed shows at once. */
+  private present(elements: readonly ExcalidrawElement[], previous: { has(id: string): boolean }, work: CanvasWork) {
+    try { this.presentation?.show(elements, previous, this.surface, work) }
+    catch (error) {
+      console.error('Galta canvas presentation failed; showing committed content', error)
+      this.clearPresentation()
+    }
   }
+  /** Land everything being presented at once. */
   clearPresentation() { this.presentation?.clear() }
   /** Fill the editor's own brush caches cooperatively before its atomic swap.
    * Keep the exact prepared objects: these caches are keyed by element identity. */
@@ -135,12 +150,14 @@ export class CanvasScene {
     const s = this.api.getAppState()
     return { scrollX: s.scrollX, scrollY: s.scrollY, zoom: s.zoom.value }
   }
+  /** A read-only capture: unchanged elements are the copies history already holds. */
   snapshot(): SceneSnapshot {
     const s = this.api.getAppState()
-    return cloneCanvasSnapshot({ engine: 'excalidraw', version: 1, document: this.document, view: { scrollX: s.scrollX, scrollY: s.scrollY, zoom: s.zoom.value } })
+    return saveCanvasSnapshot({ engine: 'excalidraw', version: 1, document: this.document, view: { scrollX: s.scrollX, scrollY: s.scrollY, zoom: s.zoom.value } })
   }
   restore(value: unknown) {
-    const s = cloneCanvasSnapshot(validateSnapshot(value))
+    // History's immutable objects stay the saved document; the editor gets copies.
+    const s = validateSnapshot(value)
     this.restorationVersion++
     // Saved text measurements are artwork. Only new edits need preparation.
     // The engine may repair old ordering indexes; retain the saved document
@@ -148,7 +165,7 @@ export class CanvasScene {
     // Old programmatic brushes also need native local geometry. Convert only
     // the applied copy: historical exports/revisions remain exactly intact.
     const applied = cloneCanvasSnapshot(s)
-    applied.document.elements = applied.document.elements.map(normalizeFreeDraw)
+    applied.document.elements = applied.document.elements.map((copy, i) => restored(copy, s.document.elements[i]!))
     this.applyRestored(s, applied)
   }
   /** Startup prepares native caches before publishing the restored scene. The
@@ -158,8 +175,7 @@ export class CanvasScene {
     for (const element of source.document.elements) {
       await work.checkpoint()
       if (this.disposed) throw new Error('The canvas has been closed')
-      const copy = cloneCanvasElement(element)
-      saved.push(copy); applied.push(normalizeFreeDraw(cloneCanvasElement(copy)))
+      saved.push(element); applied.push(restored(cloneCanvasElement(element), element))
     }
     const s = { ...source, view: { ...source.view }, document: { elements: saved, files: { ...source.document.files } } }
     const ready = { ...s, document: { elements: applied, files: { ...source.document.files } } }
@@ -197,25 +213,31 @@ export class CanvasScene {
     return prepareToolSnapshot(elements, files, this.view)
   }
   /** Apply a prepared document without normalizing again, keeping the live camera.
-   * `reveal` replays the newly added elements after the committed paint, so the
-   * decoration covers a finished document instead of racing the transaction. */
+   * `reveal` lands the edit's new work in turn without changing the document. */
   applyPrepared(snapshot: SceneSnapshot, undoable = true, appState: Partial<AppState> = {}, reveal?: { previous: { has(id: string): boolean }; work: CanvasWork }) {
     if (this.disposed) throw new Error('The canvas has been closed')
     const { document } = validateSnapshot(snapshot)
-    // The native paint takes over now, even if history activation is still
-    // saving. Any reveal from an earlier edit is replaced by this one.
-    this.clearPresentation()
     this.restoredDocument = undefined
     this.resources = { ...this.resources, ...normalizeAssets(document.files) }
     const files = editorFiles(document.files, this.urls)
     const elements = document.elements.map(el => videoData(el) && el.link !== VIDEO_LINK ? { ...el, link: VIDEO_LINK } : el)
+    // The native paint takes over now, even if history activation is still
+    // saving. A reveal holds this edit's new work back before the scene shows
+    // it, after the work still landing; any other apply lands everything now.
+    if (reveal) this.present(elements, reveal.previous, reveal.work)
+    else this.clearPresentation()
     this.observe(elements, files)
-    this.api.updateScene({ elements, appState: { ...this.api.getAppState(), ...appState }, captureUpdate: undoable ? CaptureUpdateAction.IMMEDIATELY : CaptureUpdateAction.NEVER })
-    // addFiles builds image caches for elements currently in the scene. Calling
-    // it before updateScene leaves new/history images as placeholders until
-    // Excalidraw's delayed failsafe refresh, despite valid persisted bytes.
-    this.api.addFiles(Object.values(files))
-    if (reveal) void this.present(elements, reveal.previous, reveal.work).catch(() => this.clearPresentation())
+    try {
+      this.api.updateScene({ elements, appState: { ...this.api.getAppState(), ...appState }, captureUpdate: undoable ? CaptureUpdateAction.IMMEDIATELY : CaptureUpdateAction.NEVER })
+      // addFiles builds image caches for elements currently in the scene. Calling
+      // it before updateScene leaves new/history images as placeholders until
+      // Excalidraw's delayed failsafe refresh, despite valid persisted bytes.
+      this.api.addFiles(Object.values(files))
+    } catch (error) {
+      // Never present work the scene does not hold.
+      this.clearPresentation()
+      throw error
+    }
   }
   observe(elements: readonly ExcalidrawElement[], files: BinaryFiles): boolean {
     // A native undo may refer to a retired guide. It cannot resurrect system
@@ -261,7 +283,7 @@ export class CanvasScene {
     // Preserve the world span of the shorter edge. Unlike repeatedly fitting
     // both dimensions, this is reversible when switching portrait/landscape.
     const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(frame.width, frame.height) / span))
-    // A moving camera reuses bitmaps; settling restores exact rendering.
+    // A moving camera reuses the tiles already drawn; settling restores exact rendering.
     const shouldCacheIgnoreZoom = moving || this.api.getAppState().shouldCacheIgnoreZoom
     this.api.updateScene({ appState: { zoom: { value: zoom as AppState['zoom']['value'] }, scrollX: (frame.left + frame.width / 2) / zoom - center.x, scrollY: (frame.top + frame.height / 2) / zoom - center.y, shouldCacheIgnoreZoom }, captureUpdate: CaptureUpdateAction.NEVER })
   }
@@ -296,7 +318,7 @@ export class CanvasScene {
     })
     if (!this.disposed) this.settleZoom(this.api.getAppState().zoom.value, 0)
   }
-  /** Native zoom reuses bitmaps while the camera moves. Refresh visible brushes
+  /** Native zoom reuses drawn tiles while the camera moves. Refresh visible brushes
    * in slices before returning to exact-resolution rendering at `zoom`. */
   private settleZoom(zoom: number, delay: number) {
     this.zoomPreparation?.abort(); clearTimeout(this.zoomTimer)
@@ -315,7 +337,7 @@ export class CanvasScene {
       })
     }, delay)
   }
-  async preview(selectedIds: readonly string[] = this.selectedIds, detail: 'low' | 'high' = 'low', region?: CanvasRegion, unrendered?: string[]): Promise<Blob | undefined> {
-    return renderToolPreview(this.elements, this.files, this.api.getAppState(), selectedIds, detail, region, unrendered)
+  async preview(selectedIds: readonly string[] = this.selectedIds, detail: 'low' | 'high' = 'low', region?: CanvasRegion, unrendered?: string[], overlay?: PreviewOverlay): Promise<Blob | undefined> {
+    return renderToolPreview(this.elements, this.files, this.api.getAppState(), selectedIds, detail, region, unrendered, overlay)
   }
 }

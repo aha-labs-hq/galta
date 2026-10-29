@@ -14,13 +14,18 @@ try {
       console.log(JSON.stringify(await activateRelease(Bun.argv[2])))
       break
     }
+    case 'codex-download': {
+      const { downloadCodex } = await import('./codex')
+      await downloadCodex()
+      break
+    }
     case 'inspect': {
       const { inspectInstallation } = await import('./installation')
       if (!Bun.argv[2]) throw new Error('A release directory is required')
       console.log(JSON.stringify(await inspectInstallation(Bun.argv[2])))
       break
     }
-    default: throw new Error('Expected canvas, codex, mcp, companion, install or inspect')
+    default: throw new Error('Expected canvas, codex, mcp, companion, install, inspect or codex-download')
   }
 } catch (error) {
   // The Mac app shows this text under What happened. One line, never the

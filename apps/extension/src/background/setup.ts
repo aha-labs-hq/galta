@@ -38,6 +38,13 @@ export function checkSetup(): Promise<SetupStatus> {
   return companion({ method: 'status' }, 8_000, assessCompanion, ({ absent, detail }) => ({ state: absent ? 'absent' : 'unavailable', detail }))
 }
 
+/** The user chose Download Codex. The Mac app downloads it in the background;
+ * the reply is the status that follows, and later status checks show progress.
+ * Starting waits for the download to report, so this allows longer than a status check. */
+export function downloadCodex(): Promise<SetupStatus> {
+  return companion({ method: 'codex/download' }, 25_000, assessCompanion, ({ absent, detail }) => ({ state: absent ? 'absent' : 'unavailable', detail }))
+}
+
 /** Provider keys come only from Galta's own pages (the canvas and the side
  * panel), never from a content script running inside a website. */
 export function isGaltaPage(sender: chrome.runtime.MessageSender): boolean {

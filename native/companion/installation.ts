@@ -1,6 +1,7 @@
 import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { galtaPaths } from '../paths'
+import { inspectCodex } from './codex'
 import { inspectRelease } from './health'
 import { assertRegistration, currentRelease, registeredExtensionId, registrationDirectory } from './registration'
 import { hostRoles, readRelease } from './release'
@@ -53,5 +54,5 @@ export async function inspectInstallation(source: string) {
   } catch (error) {
     installation = { state: 'repair-required', detail: error instanceof Error ? error.message : 'The installation could not be checked.' }
   }
-  return { ...health, installation, ...(installation.state === 'current' && health.runtime.available ? { mcpCommand: join(currentRelease, 'Resources/galta-mcp') } : {}) }
+  return { ...health, codex: await inspectCodex(), installation, ...(installation.state === 'current' && health.runtime.available ? { mcpCommand: join(currentRelease, 'Resources/galta-mcp') } : {}) }
 }

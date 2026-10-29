@@ -46,7 +46,7 @@ test('world bounds agree across submission, inspection and receipts without chan
     expect(summary).toMatchObject({ x: native.x, y: native.y, width: native.width, height: native.height, rotation: native.angle })
     expect(summary.bounds).toEqual(result.detailed.find((item: any) => item.id === id).bounds)
     expect(summary.bounds).toEqual(result.receipt.elements.find((item: any) => item.id === id).bounds)
-    expect(result.message.visible.items.find((item: any) => item.id === id)).toEqual({ id, kind: summary.kind, bounds: summary.bounds })
+    expect(result.message.visible.items.find((item: any) => item.id === id)).toEqual({ id, kind: summary.kind, bounds: summary.bounds, mark: expect.stringMatching(/^\d+$/) })
     for (const [key, value] of Object.entries(bounds as any)) expect(summary.bounds[key]).toBeCloseTo(value as number, 7)
   }
 })

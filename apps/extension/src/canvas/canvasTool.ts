@@ -14,6 +14,7 @@ import { imageDimensions } from './imageImport'
 import type { SceneSnapshot } from './scene'
 import type { ToolScene } from './toolScene'
 import { elementBounds, inRegion, observeCanvas } from './observation'
+import { captureMarks } from './captureMarks'
 
 export type PendingCanvasMutation = { before: SceneSnapshot; snapshot: SceneSnapshot; assertCurrent: () => void; apply: () => void }
 
@@ -221,6 +222,14 @@ export class CanvasTool {
     while (this.evidence.size > 64) this.evidence.delete(this.evidence.keys().next().value!)
   }
 
+  /** The numbers a marked canvas_capture of this view target draws, without
+   * rendering it, so a message can name them even when its pixels were sent
+   * earlier. */
+  marks(target: Record<string, unknown>) {
+    const elements = this.scene.elements
+    return captureMarks(elements, observeCanvas(elements, target, this.submitted?.selection ?? this.scene.selectedIds).ids)
+  }
+
   /** Throws for an unserved tool rather than answering with an empty success,
    * so a mismatched surface is reported instead of silently doing nothing. */
   async execute(tool: string, value: unknown, scope: CanvasToolScope): Promise<ToolResult> {
@@ -259,15 +268,20 @@ export class CanvasTool {
     const elements = this.scene.elements
     if (input.detail !== undefined && !['low', 'high'].includes(input.detail)) throw new Error('Invalid canvas view detail')
     if (input.file !== undefined && typeof input.file !== 'boolean') throw new Error('file must be true or false')
+    if (input.marks !== undefined && typeof input.marks !== 'boolean') throw new Error('marks must be true or false')
+    if (input.grid !== undefined && typeof input.grid !== 'boolean') throw new Error('grid must be true or false')
     const detail = input.detail === 'high' ? 'high' : 'low'
     const target = observeCanvas(elements, input, this.submitted?.selection ?? this.scene.selectedIds)
     if (!target.ids.length) throw new Error('There is nothing in that canvas view.')
     const viewedIds = new Set(target.ids)
     const viewed = elements.filter(el => viewedIds.has(el.id))
+    const numbered = input.marks === true ? captureMarks(elements, target.ids) : undefined
+    const overlay = numbered || input.grid === true ? { marks: numbered?.marks ?? [], grid: input.grid === true } : undefined
+    if (overlay && input.file === true) throw new Error('file saves the canvas as drawn; request marks or grid in a separate view.')
     // Pages show as posters of the loaded page; other embedded content, and a
     // page whose poster could not be drawn, shows only its bounds or title.
     const titled: string[] = []
-    const preview = await this.scene.preview(target.ids, detail, target.bounds, titled)
+    const preview = await this.scene.preview(target.ids, detail, target.bounds, titled, overlay)
     const unsupported = [...viewed.filter(el => ['embeddable', 'iframe'].includes(el.type) && !videoData(el) && !htmlDocument(el)).map(el => el.id), ...titled]
     const pages = viewed.filter(el => htmlDocument(el) && !titled.includes(el.id)).map(el => el.id)
     this.document.alive(scope.signal)
@@ -308,7 +322,8 @@ export class CanvasTool {
       scope.signal.throwIfAborted()
       saved = { path, artifactUri: managedArtifactReference(path, scope.cwd) }
     }
-    const metadata = { revision: before, scope: target.scope, ...(target.bounds ? { region: target.bounds } : {}), elementIds: evidence.elementIds, elementCount: viewed.length, complete, unrenderedElementIds: unsupported, videoPosterIds: viewed.filter(el => videoData(el)).map(el => el.id), htmlPosterIds: pages, ...(limitations.length ? { limitation: limitations.join(' ') } : {}), evidence, ...saved }
+    const metadata = { revision: before, scope: target.scope, ...(target.bounds ? { region: target.bounds } : {}), elementIds: evidence.elementIds, elementCount: viewed.length, complete, unrenderedElementIds: unsupported, videoPosterIds: viewed.filter(el => videoData(el)).map(el => el.id), htmlPosterIds: pages, ...(limitations.length ? { limitation: limitations.join(' ') } : {}),
+      ...(numbered ? { marks: numbered.marks, ...(numbered.total > numbered.marks.length ? { unmarkedObjectCount: numbered.total - numbered.marks.length } : {}) } : {}), evidence, ...saved }
     return { content: [{ type: 'image', data: imageUrl.slice(imageUrl.indexOf(',') + 1), mimeType: 'image/jpeg' }, { type: 'text', text: JSON.stringify(metadata) }], structuredContent: metadata }
   }
 

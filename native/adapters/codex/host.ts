@@ -16,7 +16,6 @@ if (!extensionOrigin?.startsWith('chrome-extension://')) {
 
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { prepareGaltaDataDirectory } from '../../dataDirectory'
 import { galtaRuntimeDirectory, nativeBinaryDirectory } from '../../paths'
@@ -24,19 +23,22 @@ import { createNativeSender } from '../../messaging'
 import { CODEX_EMBEDDED_ARGS } from '../../../packages/runtime/src/codexConfig'
 import { galtaToolContract } from '../../../packages/canvas/src/contract'
 import { EMBEDDED_MCP_ENV, EMBEDDED_TOOL_TIMEOUT_SECONDS } from '../../../packages/canvas/src/execution'
+import { codexEnvironment, findCodex } from '../../companion/codex'
 
-const codexCandidates = [
-  ...(Bun.env.GALTA_BUNDLED_CODEX_BIN ? [Bun.env.GALTA_BUNDLED_CODEX_BIN] : []),
-  '/Applications/Codex.app/Contents/Resources/codex',
-  `${homedir()}/Applications/Codex.app/Contents/Resources/codex`,
-  `${homedir()}/.local/bin/codex`,
-  '/opt/homebrew/bin/codex',
-  '/usr/local/bin/codex',
-  'codex'
-]
 // An explicit installation is authoritative. Let spawn report an invalid path
 // instead of silently running another Codex with different configuration.
-const codexBinary = Bun.env.GALTA_CODEX_BIN ?? codexCandidates.find(path => path === 'codex' || existsSync(path))!
+// Otherwise the user's own supported Codex, else the copy Galta downloaded.
+const found = Bun.env.GALTA_CODEX_BIN ? undefined : (await findCodex()).codex
+const codexBinary = Bun.env.GALTA_CODEX_BIN ?? found?.path
+const chromeReader = Bun.stdin.stream().getReader()
+const sendToChrome = createNativeSender()
+if (!codexBinary) {
+  // Every request gets the next step; the browser ends this relay by disconnecting.
+  await readChrome(async message => {
+    if (message.id !== undefined) await sendToChrome({ id: message.id, error: { code: -32001, message: 'Galta couldn’t find Codex on this Mac. Open Settings › Chat in Galta to set it up.' } })
+  })
+  process.exit(0)
+}
 
 // Do not inherit the browser's host directory as Codex's startup workspace.
 if (!Bun.env.GALTA_WORKSPACE_DIRECTORY) await prepareGaltaDataDirectory()
@@ -56,20 +58,21 @@ const child = Bun.spawn([codexBinary, 'app-server', '--stdio', ...CODEX_EMBEDDED
   '-c', 'mcp_servers.galta.default_tools_approval_mode="approve"'
 ], {
   cwd: runtimeDirectory,
+  // The user's own Codex runs with the PATH its installation needs.
+  env: found ? codexEnvironment(found.directory) : process.env,
   stdin: 'pipe',
   stdout: 'pipe',
   stderr: 'inherit'
 })
 
-const chromeReader = Bun.stdin.stream().getReader()
 const codexReader = child.stdout.getReader()
-const sendToChrome = createNativeSender()
 
 async function sendToCodex(message: unknown): Promise<void> {
   await child.stdin.write(`${JSON.stringify(message)}\n`)
 }
 
-async function readChrome(): Promise<void> {
+/** Chrome's length-prefixed frames; Galta's own requests are answered here. */
+async function readChrome(forward: (message: { id?: unknown; method?: unknown }) => Promise<void>): Promise<void> {
   const decoder = new TextDecoder()
   let buffer = new Uint8Array(0)
   while (true) {
@@ -93,7 +96,7 @@ async function readChrome(): Promise<void> {
         } catch (error) {
           await sendToChrome({ id: message.id, error: { code: -32000, message: error instanceof Error ? error.message : 'Runtime configuration request failed' } })
         }
-      } else await sendToCodex(message)
+      } else await forward(message)
     }
   }
 }
@@ -118,7 +121,7 @@ async function readCodex(): Promise<void> {
 // Either peer closing ends this relay. Waiting for both leaves an orphaned
 // app-server when the browser closes the side panel or reloads the extension.
 try {
-  await Promise.race([readChrome(), readCodex()])
+  await Promise.race([readChrome(sendToCodex), readCodex()])
 } finally {
   child.stdin.end()
   child.kill()

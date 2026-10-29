@@ -29,32 +29,19 @@ struct SetupView: View {
             .padding(.bottom, CompanionStyle.sectionSpacing)
 
             VStack(alignment: .leading, spacing: CompanionStyle.contentSpacing) {
-                Text(message).foregroundStyle(.secondary).lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let message {
+                    Text(message).foregroundStyle(.secondary).lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 action
                 if let browserError = browsers.error {
                     Text(browserError).font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true).accessibilityLabel("Browser could not open. \(browserError)")
                 }
             }
-
-            Spacer(minLength: CompanionStyle.sectionSpacing)
-
-            Button { openWindow(id: "connection") } label: {
-                HStack(spacing: 4) {
-                    Text("Connection details")
-                    Image(systemName: "chevron.right").imageScale(.small)
-                }
-                .font(.callout).foregroundStyle(.secondary)
-                .padding(.vertical, 6).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity)
-            .help("Open connection details (⌘,).")
         }
         .padding(CompanionStyle.padding)
         .frame(width: CompanionStyle.width)
-        .frame(minHeight: CompanionStyle.minimumHeight)
         .fixedSize(horizontal: false, vertical: true)
         .containerBackground(.thickMaterial, for: .window)
         .onAppear { browsers.refreshInstalled() }
@@ -72,7 +59,6 @@ struct SetupView: View {
                             Text("Open in \(browser.name)").font(.body.weight(.medium))
                             Spacer()
                             if browsers.opening == browser.id { ProgressView().controlSize(.small) }
-                            else { Image(systemName: "arrow.up.forward").foregroundStyle(.secondary) }
                         }.padding(.horizontal, 6).padding(.vertical, 6).contentShape(Rectangle())
                     }
                     .buttonStyle(.bordered).controlSize(.large)
@@ -92,25 +78,31 @@ struct SetupView: View {
             Button("Show Galta in Finder") { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
                 .buttonStyle(.borderedProminent).controlSize(.large)
         } else if model.phase == .failed {
-            Button("Check again") { Task { await model.refresh() } }
-                .buttonStyle(.borderedProminent).controlSize(.large)
-                .disabled(model.operation != nil)
+            HStack(spacing: CompanionStyle.contentSpacing) {
+                Button("Check again") { Task { await model.refresh() } }
+                    .buttonStyle(.borderedProminent).controlSize(.large)
+                    .disabled(model.operation != nil)
+                // Why it failed is in Connection Details, also at ⌘,.
+                Button("Details") { openWindow(id: "connection") }
+                    .buttonStyle(.link).help("Open connection details (⌘,).")
+            }
         } else if [.unavailable, .conflict].contains(model.phase) {
             Button("View connection details") { openWindow(id: "connection") }
                 .buttonStyle(.borderedProminent).controlSize(.large)
         }
     }
 
-    private var message: String {
+    /// Only what the title and the action don't already say. A ready home
+    /// needs none: its buttons name the browsers they open.
+    private var message: String? {
         switch model.phase {
-        case .checking, .ready: "Open your canvas in a browser with the Galta extension installed."
-        case .moveToApplications: "Drag the app into Applications, then open it there to finish setup."
-        case .connect: "Let the agents on this Mac work with Galta in your browser. Your canvases stay in your browser."
-        case .update: "A new connection is ready to install. Your canvases and active work stay in place."
-        case .repair: "The browser connection needs a repair. Your canvases and conversations stay in place."
-        case .unavailable: "Galta’s runtime couldn’t start. Check the details before connecting."
-        case .conflict: "This app doesn’t match the installed connection. Check the details to find the next step."
-        case .failed: "The connection couldn’t be checked or changed. Check again, or open the details for help."
+        case .checking, .ready: nil
+        case .moveToApplications: "Then open Galta from there."
+        case .connect: "Let the agents on this Mac work with Galta in your browser. Your canvases stay there."
+        case .update, .repair: "Your canvases and conversations stay in place."
+        case .unavailable: "Galta’s runtime couldn’t start."
+        case .conflict: "This app doesn’t match the installed connection."
+        case .failed: "The connection couldn’t be checked or changed."
         }
     }
     private var actionTitle: String {

@@ -213,7 +213,7 @@ test('production 200-video board stays responsive during actual pan gestures', {
 test('legacy media markers render efficiently without rewriting saved artwork on restore', async ({ page }) => {
   await sceneVideo(page)
   const restored = await page.evaluate(() => {
-    const s = (window as any).scene, saved = s.snapshot()
+    const s = (window as any).scene, saved = structuredClone(s.snapshot())
     saved.document.elements[0].link = '/galta-video'
     s.restore(saved)
     return { saved: s.snapshot().document.elements[0].link, applied: s.elements[0].link }

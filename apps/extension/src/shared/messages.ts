@@ -4,6 +4,7 @@ import type { AccountRequest } from './account'
 
 export type GaltaMessage =
   | { type: 'setup-status' }
+  | { type: 'codex-download' }
   | { type: 'setup-reconnect' }
   | { type: 'media-settings'; request: MediaSettingsRequest }
   | { type: 'codex-connect' }

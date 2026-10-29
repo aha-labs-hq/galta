@@ -10,7 +10,40 @@ export type CompanionHealth = {
   releaseId: string
   channel: 'development' | 'beta' | 'stable'
   capabilities: string[]
+  /** Galta's own runtime: the installed release's executables. */
   runtime: { available: boolean; version?: string; error?: string }
+  /** Absent from Mac apps that bundled Codex (0.1.4 and earlier); their
+   * runtime check covered it. */
+  codex?: CodexAvailability
+}
+
+/** What a Codex download fetches: the official package Galta was tested with. */
+export type CodexDownload = { version: string; bytes: number }
+
+/** Chat in Galta runs on Codex: the user's own when it is new enough,
+ * otherwise a copy Galta downloads only when the user asks (`codex/download`).
+ * Canvas access and external agents never depend on it. */
+export type CodexAvailability =
+  | { state: 'ready'; version: string; source: 'yours' | 'galta' | 'override' }
+  | { state: 'missing'; download: CodexDownload }
+  /** The newest Codex found is older than Galta supports: the user's own, or
+   * Galta's copy after a newer Galta raised the pinned version. */
+  | { state: 'outdated'; version: string; source: 'yours' | 'galta'; minimum: string; download: CodexDownload }
+  | { state: 'downloading'; received: number; download: CodexDownload }
+  | { state: 'failed'; error: string; download: CodexDownload }
+  /** Not sent by Galta for Mac: how this extension reads a `codex` it does not
+   * understand, from a newer Mac app. Chat asks for an extension update; the
+   * canvas and external agents are unaffected. */
+  | { state: 'unrecognized' }
+
+function validCodex(value: unknown): value is Exclude<CodexAvailability, { state: 'unrecognized' }> {
+  const c = value as Record<string, unknown> | null, text = (v: unknown) => typeof v === 'string' && v.length > 0 && v.length <= 400
+  if (!c || typeof c !== 'object') return false
+  if (c.state === 'ready') return text(c.version) && ['yours', 'galta', 'override'].includes(c.source as string)
+  const download = c.download as Record<string, unknown> | undefined
+  if (!text(download?.version) || !Number.isSafeInteger(download?.bytes)) return false
+  return c.state === 'missing' || c.state === 'outdated' && text(c.version) && text(c.minimum) && ['yours', 'galta'].includes(c.source as string)
+    || c.state === 'downloading' && Number.isSafeInteger(c.received) || c.state === 'failed' && text(c.error)
 }
 
 /** Every detail is a sentence for the user: what is wrong and the step that fixes it. */
@@ -34,7 +67,9 @@ export function assessCompanion(value: unknown): SetupStatus {
     || !REQUIRED_CAPABILITIES.every(c => h.capabilities!.includes(c)) || typeof h.runtime?.available !== 'boolean') {
     return { state: 'incompatible', detail: 'The extension and Mac app need compatible updates. Update Galta in the browser and on this Mac, then check again.' }
   }
-  const health = h as CompanionHealth
+  // Only Chat needs Codex, so a Codex report this extension cannot read never
+  // makes the Mac app incompatible.
+  const health = (h.codex === undefined || validCodex(h.codex) ? h : { ...h, codex: { state: 'unrecognized' } }) as CompanionHealth
   return health.runtime.available ? { state: 'ready', health }
-    : { state: 'runtime-unavailable', health, detail: 'Galta for Mac’s AI runtime couldn’t start. Open Galta on your Mac for the next step.' }
+    : { state: 'runtime-unavailable', health, detail: 'Galta for Mac’s runtime couldn’t start. Open Galta on your Mac for the next step.' }
 }

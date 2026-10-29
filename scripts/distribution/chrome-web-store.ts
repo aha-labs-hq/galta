@@ -58,6 +58,9 @@ export class ChromeWebStore {
   /** Publishes the approved, staged package. */
   release() { return this.publish() }
 
+  /** Withdraws the submission in review or staged; the uploaded package stays as the draft. */
+  async cancel() { await this.call('POST', `${API}/v2/${this.item}:cancelSubmission`) }
+
   private async publish(body?: object): Promise<ItemState> {
     const result = await this.call('POST', `${API}/v2/${this.item}:publish`, body && JSON.stringify(body))
     for (const warning of result.warningInfo?.warnings ?? []) console.warn(`Store warning ${warning.reason}: ${warning.description}`)

@@ -5,7 +5,8 @@
     "declaration": false,
     "noEmit": true,
     "types": ["bun"],
-    "lib": ["ESNext"]
+    "lib": ["ESNext"],
+    "resolveJsonModule": true
   },
   "include": ["*.ts", "bridge/**/*.ts", "adapters/codex/**/*.ts", "mcp/**/*.ts", "media/**/*.ts", "companion/**/*.ts"]
 }

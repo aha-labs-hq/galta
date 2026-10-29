@@ -2,7 +2,7 @@ import type { GaltaMessage } from '../shared/messages'
 import { codexAdapter, handleCodexMessage } from './codexAdapter'
 import { canvasBridge } from './canvasBridge'
 import { attachBrowser } from './browserBridge'
-import { checkSetup, isGaltaPage, mediaSettings } from './setup'
+import { checkSetup, downloadCodex, isGaltaPage, mediaSettings } from './setup'
 import { attachTaskHost, ensureTaskHost } from './taskHost'
 import { addToCollection, listCollection, removeFromCollection } from './collectionStore'
 import { googleTabClosed, handleAccount, protectAccountStorage, receiveHandoff } from './account'
@@ -70,6 +70,11 @@ chrome.runtime.onMessage.addListener((message: GaltaMessage | { type: 'task-host
   if (message.type === 'collection-remove') { void removeFromCollection(message.id).then(items => sendResponse({ ok: true, items }), error => sendResponse({ ok: false, error: String(error) })); return true }
   if (message.type === 'task-host-ensure') { void ensureTaskHost().then(() => sendResponse({ ok: true }), error => sendResponse({ ok: false, error: String(error) })); return true }
   if (message.type === 'setup-status') { void checkSetup().then(sendResponse); return true }
+  if (message.type === 'codex-download') {
+    if (!isGaltaPage(sender)) { sendResponse({ state: 'unavailable', detail: 'Download Codex from Galta’s Settings.' }); return false }
+    void downloadCodex().then(sendResponse)
+    return true
+  }
   if (message.type === 'media-settings') {
     if (!isGaltaPage(sender)) { sendResponse({ ok: false, error: 'Connect providers from Galta.' }); return false }
     void mediaSettings(message.request).then(response => {

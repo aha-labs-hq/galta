@@ -84,6 +84,27 @@ test('an invalid explicit Codex executable fails instead of silently selecting a
   }
 }, 10_000)
 
+test('without Codex the relay answers every request with the step that sets it up', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'galta-relay-no-codex-'))
+  let host
+  try {
+    const env = { ...process.env, HOME: directory, GALTA_CODEX_CANDIDATES: '', GALTA_WORKSPACE_DIRECTORY: join(directory, 'workspaces'), GALTA_RUNTIME_DIRECTORY: join(directory, 'runtime') }
+    delete env.GALTA_CODEX_BIN
+    host = Bun.spawn([process.execPath, join(root, 'native/adapters/codex/host.ts'), origin], { env, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' })
+    const output = messages(host.stdout)
+    host.stdin.write(frame({ id: 1, method: 'initialize', params: {} }))
+    expect((await output.next()).value).toEqual({ id: 1, error: { code: -32001, message: 'Galta couldn’t find Codex on this Mac. Open Settings › Chat in Galta to set it up.' } })
+    // Notifications need no answer; the next request gets the same one.
+    host.stdin.write(Buffer.concat([frame({ method: 'initialized' }), frame({ id: 2, method: 'account/read', params: {} })]))
+    expect((await output.next()).value).toMatchObject({ id: 2, error: { code: -32001 } })
+    host.stdin.end()
+    expect(await host.exited).toBe(0)
+  } finally {
+    host?.kill(); if (host) await host.exited
+    await rm(directory, { recursive: true, force: true })
+  }
+}, 10_000)
+
 test('app-server exit closes the native relay while the browser input is still open', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'galta-relay-exit-'))
   const fakeCodex = join(directory, 'codex')

@@ -18,6 +18,7 @@ import { CanvasSlots } from '../canvas/CanvasSlots'
 import { runCapabilityChecks } from './capability-checks'
 import { exportToCanvas, getCommonBounds, mutateElement } from '@excalidraw/excalidraw'
 import { previewGeometry, clonePreviewElement } from '../canvas/previewGeometry'
+import { saveCanvasVersion } from '../canvas/cloneSnapshot'
 import { canvasPreviews, previewIdentity } from '../canvas/canvasPreviews'
 import { workspaceRepository } from '../canvas/workspace'
 import { createAgentInvitation } from '../canvas/agentInvitationScene'
@@ -30,7 +31,7 @@ function mount(scene: CanvasScene) {
   host.engineTest = {
     createAgentInvitation, exportWorkspace, importWorkspace,
     captureSubmittedContext, tidySelectedImages,
-    IndexedDbWorkspaceRepository, snapshotReference, previewGeometry, clonePreviewElement, canvasPreviews, previewIdentity, workspaceRepository,
+    IndexedDbWorkspaceRepository, snapshotReference, previewGeometry, clonePreviewElement, canvasPreviews, previewIdentity, workspaceRepository, saveCanvasVersion,
     capturedTool: (submitted: ReturnType<typeof captureSubmittedContext>) => new CanvasTool(scene, artifacts, async mutation => { mutation.apply() }, submitted),
     migrateWorkspace, legacyStrokePoints, normalizeWorkspace, exportToCanvas, getCommonBounds, mutateElement,
     repository: new IndexedDbWorkspaceRepository('galta-migration-test'),

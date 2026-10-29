@@ -1,13 +1,15 @@
 #!/usr/bin/env bun
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { assertCodexEmbeddedConfig } from '../packages/runtime/src/codexConfig'
 import { assessCompanion } from '../packages/runtime/src/lifecycle'
-import { checksum, codexExecutable, codexExecutables, readRelease, runtimeBundle, runtimeBundleIdentifier, runtimeExecutable } from '../native/companion/release'
-import { run } from './distribution/config'
+import { checksum, readRelease, runtimeBundle, runtimeBundleIdentifier, runtimeExecutable } from '../native/companion/release'
+import { root, run } from './distribution/config'
+import { prepareDependencies } from './distribution/dependencies'
 import { NativeClient } from './distribution/native-client'
 import { verifyToolExecution } from './distribution/verify-tool-execution'
 import { readCodeIdentity } from './distribution/signing'
@@ -32,14 +34,14 @@ try {
   const app = join(isolated, 'Galta.app'), contents = join(app, 'Contents')
   const release = await readRelease(contents, true)
   if (release.release.extensionId !== receipt.extensionId) throw new Error('Companion extension identity differs from the package receipt')
-  if (run([join(contents, codexExecutable), '--version']).trim() !== `codex-cli ${receipt.dependencies.codex.version}`) throw new Error('Bundled Codex version differs from the package receipt')
+  if (await Bun.file(join(contents, 'Resources/codex/codex-package.json')).exists()) throw new Error('The app must not bundle Codex')
   const identity = readCodeIdentity(join(contents, runtimeBundle))
   const info = JSON.parse(run(['/usr/bin/plutil', '-convert', 'json', '-o', '-', join(contents, runtimeBundle, 'Contents/Info.plist')]))
   if (identity.identifier !== runtimeBundleIdentifier(receipt.channel) || info.CFBundleIdentifier !== identity.identifier
     || info.CFBundleExecutable !== 'galta-runtime' || JSON.stringify(identity) !== JSON.stringify(receipt.signing?.runtime)) throw new Error('Runtime bundle identity does not match its release receipt')
   if (receipt.signed && (!identity.team || /\bcdhash\b/.test(identity.requirement))) throw new Error('Signed runtime identity changes with its code hash')
   run(['/usr/bin/codesign', '--verify', '--strict', join(contents, runtimeBundle)])
-  for (const executable of ['MacOS/Galta', runtimeExecutable, ...codexExecutables]) {
+  for (const executable of ['MacOS/Galta', runtimeExecutable]) {
     run(['/usr/bin/codesign', '--verify', '--strict', join(contents, executable)])
     const load = run(['/usr/bin/otool', '-l', join(contents, executable)])
     const minos = load.match(/\bminos\s+(\d+\.\d+)/)?.[1] ?? load.match(/LC_VERSION_MIN_MACOSX[\s\S]*?version\s+(\d+\.\d+)/)?.[1]
@@ -49,9 +51,15 @@ try {
   run([join(contents, 'MacOS/Galta'), '--verify-bundle'])
   const home = join(isolated, 'home'); await mkdir(home)
   const env: Record<string, string | undefined> = { ...process.env, HOME: home }
-  for (const key of ['CODEX_HOME', 'GALTA_CODEX_BIN', 'GALTA_MCP_BIN', 'GALTA_RELEASE_DIRECTORY', 'GALTA_BUNDLED_CODEX_BIN', 'GALTA_WORKSPACE_DIRECTORY', 'GALTA_RUNTIME_DIRECTORY', 'GALTA_BRIDGE_DIRECTORY']) delete env[key]
+  for (const key of ['CODEX_HOME', 'GALTA_CODEX_BIN', 'GALTA_MCP_BIN', 'GALTA_RELEASE_DIRECTORY', 'GALTA_WORKSPACE_DIRECTORY', 'GALTA_RUNTIME_DIRECTORY', 'GALTA_BRIDGE_DIRECTORY']) delete env[key]
+  // A Mac with no Codex: this machine's own installations stay out of sight,
+  // and Download Codex is served the cached pinned archive (its digest still decides).
+  const { codexArchive, lock } = await prepareDependencies(join(root, 'output/dependencies'))
+  env.GALTA_CODEX_CANDIDATES = ''
+  env.GALTA_CODEX_PACKAGE_URL = pathToFileURL(codexArchive).href
   const installed = JSON.parse(run([join(contents, runtimeExecutable), 'install', contents], undefined, env))
   if (installed.installation?.state !== 'current' || !installed.runtime.available) throw new Error('Installed runtime is not ready')
+  if (installed.codex?.state !== 'missing' || installed.codex.download?.version !== lock.codex.version) throw new Error('Without Codex, installation must still succeed and offer the pinned download')
   const registry = join(home, 'Library/Application Support/Google/Chrome/NativeMessagingHosts')
   const nativePaths: Record<string, string> = {}
   for (const kind of ['canvas', 'codex', 'companion']) {
@@ -64,12 +72,29 @@ try {
   run(['/usr/bin/codesign', '--verify', '--strict', join(installed.directory, runtimeBundle)])
   if (JSON.stringify(readCodeIdentity(join(installed.directory, runtimeBundle))) !== JSON.stringify(identity)) throw new Error('Activation changed the runtime identity')
   const origin = `chrome-extension://${receipt.extensionId}/`
-  const probe = Bun.spawn([nativePaths.companion!, origin], { env, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' })
-  const request = Buffer.from(JSON.stringify({ method: 'status' })), frame = Buffer.alloc(request.length + 4)
-  frame.writeUInt32LE(request.length); request.copy(frame, 4); probe.stdin.write(frame); probe.stdin.end()
-  const response = Buffer.from(await new Response(probe.stdout).arrayBuffer())
-  const error = await new Response(probe.stderr).text()
-  if (await probe.exited !== 0 || response.length < 4 || assessCompanion(JSON.parse(response.subarray(4).toString())).state !== 'ready') throw new Error(`Companion handshake failed: ${error}`)
+  const companion = async (method: string) => {
+    const probe = Bun.spawn([nativePaths.companion!, origin], { env, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' })
+    const request = Buffer.from(JSON.stringify({ method })), frame = Buffer.alloc(request.length + 4)
+    frame.writeUInt32LE(request.length); request.copy(frame, 4); probe.stdin.write(frame); probe.stdin.end()
+    const response = Buffer.from(await new Response(probe.stdout).arrayBuffer())
+    const error = await new Response(probe.stderr).text()
+    const status = await probe.exited === 0 && response.length >= 4 ? assessCompanion(JSON.parse(response.subarray(4).toString())) : undefined
+    if (status?.state !== 'ready') throw new Error(`Companion handshake failed: ${error}`)
+    return status.health
+  }
+  if ((await companion('status')).codex?.state !== 'missing') throw new Error('The companion must report that Codex is missing')
+  // Without Codex the relay answers with the next step instead of exiting.
+  const absent = new NativeClient(nativePaths.codex!, origin, env)
+  try {
+    const failure = await absent.request('initialize', { clientInfo: { name: 'galta_verification', version: '1' }, capabilities: { experimentalApi: true } }).then(() => undefined, (error: Error) => error.message)
+    if (!failure?.includes('Settings › Chat in Galta')) throw new Error(`The relay without Codex must name the next step: ${failure}`)
+  } finally { await absent.close() }
+  let codexState = (await companion('codex/download')).codex
+  for (const deadline = Date.now() + 180_000; codexState?.state === 'downloading' && Date.now() < deadline; await Bun.sleep(500)) codexState = (await companion('status')).codex
+  if (codexState?.state !== 'ready' || codexState.source !== 'galta' || codexState.version !== lock.codex.version) throw new Error(`Download Codex did not install the pinned package: ${JSON.stringify(codexState)}`)
+  const codexDirectory = join(home, 'Library/Application Support/Galta/codex')
+  const leftovers = (await readdir(codexDirectory)).filter(name => !['.download-lock', lock.codex.version].includes(name))
+  if (leftovers.length) throw new Error(`Download Codex left temporary files: ${leftovers.join(', ')}`)
   const codex = new NativeClient(nativePaths.codex!, origin, env)
   try {
     await codex.request('initialize', { clientInfo: { name: 'galta_verification', version: '1' }, capabilities: { experimentalApi: true, requestAttestation: false } })
@@ -84,10 +109,10 @@ try {
         const page = await codex.request('model/list', cursor ? { cursor } : {})
         for (const model of page.data) models.add(model.id)
         cursor = page.nextCursor ?? undefined
-        if (cursor && cursors.has(cursor)) throw new Error('Bundled model catalog repeated a page cursor')
+        if (cursor && cursors.has(cursor)) throw new Error('Codex model catalog repeated a page cursor')
         if (cursor) cursors.add(cursor)
       } while (cursor)
-      for (const model of requiredModels) if (!models.has(model)) throw new Error(`Bundled Codex does not advertise required model: ${model}`)
+      for (const model of requiredModels) if (!models.has(model)) throw new Error(`Downloaded Codex does not advertise required model: ${model}`)
     }
   } finally { await codex.close() }
   await verifyToolExecution(nativePaths.codex!, origin, env, home)
@@ -98,5 +123,5 @@ try {
     const tools = (await mcp.listTools()).tools.map(tool => tool.name)
     for (const tool of ['canvas_list', 'canvas_connect', 'canvas_capture', 'canvas_edit']) if (!tools.includes(tool)) throw new Error(`Packaged MCP is missing ${tool}`)
   } finally { await mcp.close() }
-  console.log('PASS: archive integrity, onboarding entry, deployment target, signatures, clean-home activation, native handshake, bundled Codex initialization, auth isolation, code-mode shell execution, and MCP discovery. Model responses were local fixtures; no paid inference or browser UI was exercised.')
+  console.log('PASS: archive integrity, onboarding entry, deployment target, signatures, no bundled Codex, clean-home activation without Codex, native handshake, the relay\'s missing-Codex answer, Download Codex from the pinned archive (served locally), downloaded Codex initialization, auth isolation, code-mode shell execution, and MCP discovery. Model responses were local fixtures; no paid inference, live download from GitHub or browser UI was exercised.')
 } finally { await rm(isolated, { recursive: true, force: true }) }

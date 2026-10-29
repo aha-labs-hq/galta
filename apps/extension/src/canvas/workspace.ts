@@ -1,7 +1,7 @@
 import { asBranchId, asCommitId, asProjectId, createProject, commitAtCursor, forkAndCommit, type CommitId, type Project, type RuntimeContext } from '@galta/domain'
 import { IndexedDbWorkspaceRepository, type WorkspaceBundle } from '@galta/storage'
 import { documentEquals } from './documentEquality'
-import { cloneCanvasSnapshot } from './cloneSnapshot'
+import { saveCanvasVersion } from './cloneSnapshot'
 
 export const workspaceRepository = new IndexedDbWorkspaceRepository()
 export const defaultProjectId = asProjectId('default-project')
@@ -47,13 +47,15 @@ export function commitWorkspaceSnapshot(current: WorkspaceBundle, at: CommitId, 
   // recorded: its nearest kept ancestor, or the canvas's new start.
   const cursor = current.project.commits[at] ? at : asCommitId(current.trimmedVersions?.[at] ?? at)
   const previous = current.snapshots[cursor] as { document?: unknown } | undefined
+  // A version shares every element its parent saved: history grows with what
+  // changed, and an unchanged canvas compares by identity.
+  const version = saveCanvasVersion(snapshot, previous)
   // Explicitly preserving a historical current canvas must not replace its
   // existing future, even if the document still equals that historical parent.
-  if (documentEquals(previous?.document, snapshot.document) && !(preserveCurrent && cursor !== current.project.headCommitId)) return current
+  if (documentEquals(previous?.document, version.document) && !(preserveCurrent && cursor !== current.project.headCommitId)) return current
   const id = asCommitId(makeId('commit'))
   const project = commitAtCursor(current.project, { id, cursorCommitId: cursor, newBranchId: asBranchId(makeId('branch')), source, now: Date.now(), events: [], snapshotRef: id, ...(runtime ? { runtime } : {}) })
-  // Saved versions are immutable; copy only the new snapshot, not all history.
-  return { ...current, project, snapshots: { ...current.snapshots, [id]: cloneCanvasSnapshot(snapshot) } }
+  return { ...current, project, snapshots: { ...current.snapshots, [id]: version } }
 }
 
 /** Save the current canvas and an agent candidate in one transaction. The
@@ -65,7 +67,7 @@ export function stageAgentSnapshot(current: WorkspaceBundle, cursor: CommitId, b
   const candidateId = asCommitId(makeId('commit'))
   const staged = forkAndCommit(base.project, { id: candidateId, historicalCommitId: baseId, newBranchId: asBranchId(makeId('branch')), source: 'agent', now: Date.now(), events: [], snapshotRef: candidateId, runtime })
   const project = { ...staged, headCommitId: baseId, activeBranchId: base.project.activeBranchId }
-  return { workspace: { ...base, project, snapshots: { ...base.snapshots, [candidateId]: cloneCanvasSnapshot(candidate) } }, baseId, candidateId }
+  return { workspace: { ...base, project, snapshots: { ...base.snapshots, [candidateId]: saveCanvasVersion(candidate, base.snapshots[baseId]) } }, baseId, candidateId }
 }
 
 export function activateCanvasSnapshot(current: WorkspaceBundle, id: CommitId, view: { scrollX: number; scrollY: number; zoom: number }): WorkspaceBundle {

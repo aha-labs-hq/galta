@@ -10,7 +10,9 @@ export const canvasChangeSchema = z.strictObject({ id: z.string().min(1), change
 export const canvasChangesMetadataSchema = z.strictObject({ since: z.string().nullable(), status: z.enum(['initial', 'compared', 'unrelated-history']) })
 export type CanvasChange = z.infer<typeof canvasChangeSchema>
 export type CanvasChanges = z.infer<typeof canvasChangesMetadataSchema> & { elements: readonly CanvasChange[] }
-const elementSchema = z.strictObject({ id: z.string().min(1), kind: z.enum(CANVAS_KINDS), bounds: canvasBoundsSchema })
+/** `mark` is the number drawn beside the element's object in the attached
+ * preview (canvas_capture marks), so IDs and pixels are tied, not guessed. */
+const elementSchema = z.strictObject({ id: z.string().min(1), kind: z.enum(CANVAS_KINDS), bounds: canvasBoundsSchema, mark: z.string().min(1).max(8).optional() })
 export type CanvasMessageElement = z.infer<typeof elementSchema>
 const sample = <T extends z.ZodType>(item: T) => z.strictObject({ total: z.number().int().nonnegative(), items: z.array(item).max(CANVAS_MESSAGE_RECORDS), truncated: z.boolean() })
 

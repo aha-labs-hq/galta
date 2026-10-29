@@ -1,4 +1,3 @@
-import { themeColor } from '../design/theme'
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { CaptureUpdateAction, Excalidraw, MainMenu, getCommonBounds } from '@excalidraw/excalidraw'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
@@ -8,7 +7,7 @@ import { allowCanvasShortcut } from './canvasShortcuts'
 import { HTML_EMBED_LINK, HtmlEmbed, htmlDocument } from './htmlEmbed'
 import { ObjectLabels } from './ObjectLabels'
 import '@excalidraw/excalidraw/index.css'
-import './canvasPresentation.css'
+import './canvasEditor.css'
 import { registerMediaClipboard } from './mediaClipboard'
 import { readPortableAssets } from './portableMedia'
 import { VIDEO_LINK, isVideoLink } from '@galta/canvas'
@@ -26,7 +25,8 @@ export const ExcalidrawCanvas = memo(function ExcalidrawCanvas({ onMount, readOn
   const [engine, setEngine] = useState<HTMLElement | null>(null)
   const [error, setError] = useState<string | null>(null)
   const sceneRef = useRef<CanvasScene | null>(null)
-  const presentation = useRef<SVGSVGElement>(null)
+  /** The editor's own box: the engine, its labels and its notices. */
+  const editor = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(document.visibilityState !== 'hidden')
   useEffect(() => {
     const change = () => setVisible(document.visibilityState !== 'hidden')
@@ -35,7 +35,7 @@ export const ExcalidrawCanvas = memo(function ExcalidrawCanvas({ onMount, readOn
   }, [])
   const exitVideo = useCallback(() => {
     api?.updateScene({ appState: { activeEmbeddable: null }, captureUpdate: CaptureUpdateAction.NEVER })
-    presentation.current?.parentElement?.querySelector<HTMLElement>('.excalidraw')?.focus({ preventScroll: true })
+    editor.current?.querySelector<HTMLElement>(':scope > .excalidraw')?.focus({ preventScroll: true })
   }, [api])
   const allowShortcut = (event: KeyboardEvent) => {
     // A native media control owns its own keys, including seek and volume.
@@ -54,9 +54,9 @@ export const ExcalidrawCanvas = memo(function ExcalidrawCanvas({ onMount, readOn
   }
   useEffect(() => {
     if (!api) return
-    const scene = new CanvasScene(api, presentation.current ?? undefined)
+    const scene = new CanvasScene(api, editor.current ?? undefined)
     sceneRef.current = scene
-    setEngine(presentation.current?.parentElement?.querySelector<HTMLElement>(':scope > .excalidraw') ?? null)
+    setEngine(editor.current?.querySelector<HTMLElement>(':scope > .excalidraw') ?? null)
     registerMediaClipboard(scene)
     let cleanup: (() => void) | undefined
     let connected = false
@@ -105,7 +105,7 @@ export const ExcalidrawCanvas = memo(function ExcalidrawCanvas({ onMount, readOn
     connect()
     return () => { cancelled = true; stop(); stopChromeNormalization(); cleanup?.(); scene.disposed = true; scene.clearPresentation() }
   }, [api, onMount])
-  return <><Excalidraw excalidrawAPI={setApi} langCode="en" theme="light" zenModeEnabled viewModeEnabled={readOnly}
+  return <div ref={editor} className="canvas-editor"><Excalidraw excalidrawAPI={setApi} langCode="en" theme="light" zenModeEnabled viewModeEnabled={readOnly}
     onPaste={async data => {
       const scene = sceneRef.current
       if (!scene || !data.elements) return true
@@ -135,7 +135,8 @@ export const ExcalidrawCanvas = memo(function ExcalidrawCanvas({ onMount, readOn
       event.preventDefault()
       api?.updateScene({ appState: { activeEmbeddable: { element, state: 'active' } } })
     }}
-    initialData={{ appState: { viewBackgroundColor: themeColor('background'), currentItemStrokeColor: '#39332e', currentItemFontFamily: defaultDrawingFont.family, currentItemRoughness: 1, boxSelectionMode: 'overlap' } }}
+    // The artwork is drawn on a transparent scene over the paper and its grain (excalidraw.css).
+    initialData={{ appState: { viewBackgroundColor: 'transparent', currentItemStrokeColor: '#39332e', currentItemFontFamily: defaultDrawingFont.family, currentItemRoughness: 1, boxSelectionMode: 'overlap' } }}
     UIOptions={{ allowKeyboardShortcut: allowShortcut, canvasActions: { changeViewBackgroundColor: false, clearCanvas: false, export: false, loadScene: false, saveToActiveFile: false, toggleTheme: false } }}
-  ><MainMenu /></Excalidraw>{api && engine && <ObjectLabels api={api} root={engine} />}<svg ref={presentation} className="canvas-presentation" aria-hidden="true" />{error && <div className="canvas-notice glass-surface" role="alert">{error}</div>}</>
+  ><MainMenu /></Excalidraw>{api && engine && <ObjectLabels api={api} root={engine} />}{error && <div className="canvas-notice glass-surface" role="alert">{error}</div>}</div>
 })

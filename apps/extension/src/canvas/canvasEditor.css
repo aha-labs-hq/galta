@@ -1,0 +1,3 @@
+/* The editor owns a box for its engine, labels and notices without becoming a
+   layout box: the engine keeps its parent's geometry and stacking. */
+.canvas-editor { display: contents; }

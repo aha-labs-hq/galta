@@ -6,7 +6,9 @@ The bridge starts `codex app-server --stdio` and translates Chrome native-messag
 
 The host configures one required `galta` MCP server using the installed
 `galta-mcp` executable with no arguments. Canvas and webpage operations both use
-it. The extension verifies effective configuration once per connection; a stale
+it. Its tools stay deferred in Code Mode, which keeps the request prefix
+shared with Codex's prompt cache; see
+[the agent contract](../../../docs/agents/codex.md#agent-contract). The extension verifies effective configuration once per connection; a stale
 or browser-only host is rejected. New threads register no dynamic Galta tools.
 Galta never rewrites Codex rollouts or databases. Legacy declarations and history
 remain owned by Codex; a new conversation obtains a fresh catalog. No dynamic-tool callback or image-routing workaround
@@ -78,10 +80,14 @@ The independent canvas host coordinates document leases for both embedded and
 MCP agents. See [the agent architecture](../../../docs/agent-architecture.md) for
 MCP setup; that path requires no Codex account.
 
-An official local Codex executable must already be available for embedded use.
-`GALTA_CODEX_BIN`, when set, selects that executable explicitly; an invalid value
-fails instead of selecting a different installation. Without it, the bridge
-discovers Codex in the standard local installation paths and then `PATH`. After installation,
+Embedded use needs an official Codex. `GALTA_CODEX_BIN`, when set, selects that
+executable explicitly; an invalid value fails instead of selecting a different
+installation. Without it, the bridge uses the user's newest Codex at or above the
+pinned version from ChatGPT for Mac, Codex for Mac, `~/.local/bin`, Homebrew,
+`/usr/local/bin`, npm's usual prefixes or the host's PATH, then a copy Galta
+downloaded into its data directory
+([distribution](../../../docs/distribution.md#codex-for-chat-in-galta)). With
+none, it answers every request with the step that sets Codex up. After installation,
 reload the extension, choose **Connect an agent**, and open **Use built-in chat** in Connection details. An existing local Codex sign-in should
 be recognized without another authorization tab. A ChatGPT browser session alone
 does not authenticate the local Codex process. Authentication failures ask Codex

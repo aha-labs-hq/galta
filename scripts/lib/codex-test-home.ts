@@ -1,4 +1,5 @@
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { chmod, copyFile, cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -15,6 +16,17 @@ export function codexTestEnvironment(home: string, directory: string): Record<st
   // Provider authentication is shared; the parent's desktop session is not.
   const disconnected = Object.fromEntries(['CODEX_APP_TOOLS_PIPE_PATH', 'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'CODEX_INTERNAL_ORIGINATOR_OVERRIDE', 'CODEX_PERMISSION_PROFILE'].map(key => [key, undefined]))
   return { ...disconnected, CODEX_HOME: home, GALTA_WORKSPACE_DIRECTORY: join(directory, 'workspaces'), GALTA_RUNTIME_DIRECTORY: join(directory, 'runtime'), GALTA_BRIDGE_DIRECTORY: join(directory, 'bridges') }
+}
+// Opt-in inherited-context probes need independent assets: Codex can replace
+// plugin caches, and browser-launched processes can add quarantine metadata.
+// Dereference nested links too, so writes never reach the user's live assets.
+export async function copyCodexTestAssets(source: string, home: string) {
+  for (const name of ['AGENTS.md', 'skills', 'plugins', 'rules']) {
+    const from = join(source, name)
+    try { await lstat(from) }
+    catch (error: any) { if (error.code === 'ENOENT') continue; throw error }
+    await cp(from, join(home, name), { recursive: true, dereference: true, preserveTimestamps: true, errorOnExist: true, force: false, mode: constants.COPYFILE_FICLONE })
+  }
 }
 export async function codexTestHome(source = process.env.CODEX_HOME ?? join(homedir(), '.codex')) {
   const directory = await mkdtemp(join(tmpdir(), 'galta-codex-test-')), home = join(directory, 'codex')

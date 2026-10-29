@@ -12,7 +12,6 @@ enum CompanionStyle {
         return image
     }()
     static let width: CGFloat = 400
-    static let minimumHeight: CGFloat = 344
     static let padding: CGFloat = 28
     static let iconSize: CGFloat = 68
     static let sectionSpacing: CGFloat = 24

@@ -188,6 +188,48 @@ same vocabulary returned by reads (`geo` includes native geometric shapes;
 including nested members. Search is scoped to the canvas. It cannot silently
 filter out frozen selection IDs, including missing objects.
 
+### Marks and grid
+
+Two failures on 2026-10-27 came from pixels the agent could not tie to the
+document. Sorting five overlapping references, an agent assigned element IDs to
+the wrong pictures from bounds alone and filed a photo of a cat in a suit as
+abstract art. Asked to trace that photo with the brush, it drew from imagined
+coordinates that matched the reference in neither proportion nor detail.
+
+`canvas_capture` therefore takes two annotations, drawn over the view and never
+into the document (`apps/extension/src/canvas/captureMarks.ts` and
+`toolScene.ts`):
+
+- `marks` numbers each object a person would point at: an outermost native
+  group, or an ungrouped element, with text bound to a container counted as part
+  of it. Each number sits at its object's top-left inside a dashed outline that
+  also shows the extent of a covered object. Numbers follow reading order. The
+  result's `marks` maps each number to its element IDs, outermost group and
+  bounds; a view with more than 40 objects numbers the largest and reports
+  `unmarkedObjectCount`.
+- `grid` draws world-coordinate lines about ten to the longer side, on round
+  values, labelled along the top and left edges. Lines invert what lies beneath
+  them, so they read on paper, ink and saturated fills alike. Positions read off
+  the picture are usable as `x`, `y` and `points` directly.
+
+Both use an explicit export frame, so world-to-pixel mapping is exact; a view
+without annotations renders as before. Neither can be combined with `file`,
+which saves the canvas as drawn for generation. The message preview always
+carries marks, and its visible records carry the same `mark`, computed by
+`CanvasTool.marks` whether pixels are attached now or were attached earlier.
+
+Judging visual work belongs to the agent and is stated in every live channel
+(`CANVAS_LOOKING_INSTRUCTIONS`): capture the result before calling it done,
+compare it with the request and any reference, and, when work must follow
+something visible, capture that reference at high detail with the grid first.
+Pixels do not show structure: in two of five diagram runs an agent that had
+looked at its work left arrows drawn between boxes but unbound, so the rule
+also asks it to confirm bindings and groups from the receipt or a read.
+A brush stroke draws a pen about 4.25 × `strokeWidth` wide (Excalidraw's
+`freeDrawPath.js`), while shapes and lines draw `strokeWidth` itself; the
+`strokeWidth` and `points` descriptions say so, because an agent that assumed
+pixels drew brush lines four times too heavy.
+
 Search results preserve document order. `elementCount` is the canvas total;
 `coverage.total` is the matching result count. No matches return an empty page,
 not an error or substitute target. Existing native names appear in summaries.

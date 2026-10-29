@@ -1,3 +1,4 @@
+import { InkPen, newWork } from './inkPen'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { CaptureUpdateAction, Excalidraw, getCommonBounds } from '@excalidraw/excalidraw'
 import type { ExcalidrawElement, FileId } from '@excalidraw/excalidraw/element/types'
@@ -24,6 +25,9 @@ export type HistoryStageHandle = {
   camera(): StageCamera
   /** Draw what the stage shows, transitions included, for a recording. */
   paint(context: CanvasRenderingContext2D): void
+  /** Resolves once the pen has drawn the moment shown; at once without ink. */
+  drawn(signal?: AbortSignal): Promise<void>
+  finishDrawing(): void
   /** The stage's pixel size, for a recording. */
   size(): { width: number; height: number }
 }
@@ -109,8 +113,11 @@ export const HistoryStage = forwardRef<HistoryStageHandle, {
   /** The saved version shown, as `data-version` for its readers. */
   version: string
   snapshot: SceneSnapshot | undefined
-  /** Where this moment changed the canvas, lit once when it settles. */
+  /** Where this moment changed the canvas: shown when it settles. */
   focus: Bounds | null
+  /** Whether that change is lit once in view: a stepped moment is, a played
+   * one only follows. */
+  light: boolean
   /** Whose hands the light shows. */
   by: 'agent' | 'user'
   /** A settled step dissolves, follows and lights; a scrub only cuts. */
@@ -123,7 +130,7 @@ export const HistoryStage = forwardRef<HistoryStageHandle, {
   selected: readonly string[]
   onSelect: (ids: string[], additive: boolean) => void
   onReady: () => void
-}>(function HistoryStage({ version, snapshot, focus, by, settled, label, live, files, insets, selected, onSelect, onReady }, handle) {
+}>(function HistoryStage({ version, snapshot, focus, light, by, settled, label, live, files, insets, selected, onSelect, onReady }, handle) {
   const [engine, setEngine] = useState<ExcalidrawImperativeAPI | null>(null)
   // The engine replaces its scene once when it finishes loading; the stage
   // starts showing artwork only after that.
@@ -137,10 +144,12 @@ export const HistoryStage = forwardRef<HistoryStageHandle, {
   }, [engine])
   const [box, setBox] = useState(() => live())
   const host = useRef<HTMLDivElement>(null), fade = useRef<HTMLCanvasElement>(null)
+  /** The pen that lands a step's new work, and whether that was all the step changed. */
+  const pen = useRef<InkPen | undefined>(undefined), inked = useRef(false)
   const elements = useRef(new StageElements()), added = useRef(new Set<string>()), shown = useRef<Stage | undefined>(undefined)
   // A camera move that another replaces still completes: whoever awaits it
   // must never wait forever.
-  const motion = useRef<{ frame: number; done(): void } | undefined>(undefined), fading = useRef<Animation | undefined>(undefined), gliding = useRef(0)
+  const motion = useRef<{ frame: number; done(): void } | undefined>(undefined), following = useRef(Promise.resolve()), fading = useRef<Animation | undefined>(undefined), gliding = useRef(0)
   const [camera, setCamera] = useState<StageCamera>(() => box ? { scrollX: box.scrollX, scrollY: box.scrollY, zoom: box.zoom } : { scrollX: 0, scrollY: 0, zoom: 1 })
   const [mark, setMark] = useState<{ key: number; bounds: Bounds; by: 'agent' | 'user' } | null>(null)
   /** Why the shown version cannot be displayed, if it cannot. */
@@ -154,6 +163,13 @@ export const HistoryStage = forwardRef<HistoryStageHandle, {
     cancelAnimationFrame(gliding.current); fading.current?.cancel()
     if (motion.current) { cancelAnimationFrame(motion.current.frame); motion.current.done(); motion.current = undefined }
   }, [])
+
+  useEffect(() => {
+    if (!api) return
+    const value = new InkPen(api, staticCanvas)
+    pen.current = value
+    return () => { value.dispose(); if (pen.current === value) pen.current = undefined }
+  }, [api])
 
   // The stage keeps the live editor's box through resizes, read once the
   // live editor has measured its own new size.
@@ -180,16 +196,23 @@ export const HistoryStage = forwardRef<HistoryStageHandle, {
     if (motion.current) { cancelAnimationFrame(motion.current.frame); motion.current.done() }
     motion.current = undefined
     const s = api.getAppState(), from = { scrollX: s.scrollX, scrollY: s.scrollY, zoom: s.zoom.value }, width = s.width, height = s.height
-    if (duration <= 0 || reduced()) { api.updateScene({ appState: { scrollX: to.scrollX, scrollY: to.scrollY, zoom: { value: to.zoom as AppState['zoom']['value'] } }, captureUpdate: CaptureUpdateAction.NEVER }); resolve(); return }
+    if (duration <= 0 || reduced()) { api.updateScene({ appState: { scrollX: to.scrollX, scrollY: to.scrollY, zoom: { value: to.zoom as AppState['zoom']['value'] }, shouldCacheIgnoreZoom: false }, captureUpdate: CaptureUpdateAction.NEVER }); resolve(); return }
     // Interpolate the world point at the centre and zoom in log space, so a
     // move reads as one even push or pull rather than a swoop.
     const centre = (c: StageCamera) => ({ x: width / 2 / c.zoom - c.scrollX, y: height / 2 / c.zoom - c.scrollY })
     const a = centre(from), b = centre(to), start = performance.now()
-    const current = { frame: 0, done: resolve }
+    const current = { frame: 0, done: () => {
+      // A pointer, replacement flight or unmount also ends cache reuse.
+      if (host.current?.isConnected) api.updateScene({ appState: { shouldCacheIgnoreZoom: false }, captureUpdate: CaptureUpdateAction.NEVER })
+      resolve()
+    } }
     const step = (now: number) => {
       const t = Math.min(1, (now - start) / duration), k = easing(t), zoom = from.zoom * (to.zoom / from.zoom) ** k
       const x = a.x + (b.x - a.x) * k, y = a.y + (b.y - a.y) * k
-      api.updateScene({ appState: { scrollX: width / 2 / zoom - x, scrollY: height / 2 / zoom - y, zoom: { value: zoom as AppState['zoom']['value'] } }, captureUpdate: CaptureUpdateAction.NEVER })
+      // Follow native camera flights: reuse tiles while zooming, then finish
+      // at the exact scale. Re-rasterizing every intermediate scale wastes
+      // the frame on pixels the next frame immediately replaces.
+      api.updateScene({ appState: { scrollX: width / 2 / zoom - x, scrollY: height / 2 / zoom - y, zoom: { value: zoom as AppState['zoom']['value'] }, shouldCacheIgnoreZoom: t < 1 }, captureUpdate: CaptureUpdateAction.NEVER })
       if (t < 1) current.frame = requestAnimationFrame(step)
       else { if (motion.current === current) motion.current = undefined; resolve() }
     }
@@ -202,13 +225,20 @@ export const HistoryStage = forwardRef<HistoryStageHandle, {
       const view = liveRef.current()
       return view ? move({ scrollX: view.scrollX, scrollY: view.scrollY, zoom: view.zoom }, duration, cubic(easing)) : Promise.resolve()
     },
+    // A moment has landed when the camera shows its change and its ink is drawn.
+    drawn(signal) { return Promise.all([following.current, pen.current?.drawn(signal)]).then(() => undefined) },
+    finishDrawing() { pen.current?.finish() },
     camera() { const s = api?.getAppState(); return s ? { scrollX: s.scrollX, scrollY: s.scrollY, zoom: s.zoom.value } : camera },
     paint(context) {
       const source = staticCanvas(), overlay = fade.current
       if (!source) return
       context.drawImage(source, 0, 0, context.canvas.width, context.canvas.height)
       const opacity = overlay ? Number(getComputedStyle(overlay).opacity) : 0
-      if (overlay && opacity > 0) { context.globalAlpha = opacity; context.drawImage(overlay, 0, 0, context.canvas.width, context.canvas.height); context.globalAlpha = 1 }
+      // the dissolving frame carries its paper (on screen, history.css), so a recording gives it the paper's colour too
+      if (overlay && opacity > 0) {
+        context.globalAlpha = opacity; context.fillStyle = themeColor('background'); context.fillRect(0, 0, context.canvas.width, context.canvas.height)
+        context.drawImage(overlay, 0, 0, context.canvas.width, context.canvas.height); context.globalAlpha = 1
+      }
     },
     size() { const source = staticCanvas(); return { width: source?.width ?? 0, height: source?.height ?? 0 } }
   }), [api, camera])
@@ -218,6 +248,8 @@ export const HistoryStage = forwardRef<HistoryStageHandle, {
     if (!api || !snapshot) return
     const first = !shown.current
     cancelAnimationFrame(gliding.current)
+    // Any step ends the drawing of the one before.
+    pen.current?.finish(); inked.current = false
     // A version that cannot be read or prepared shows its notice, never a
     // blank or stale canvas, and never takes the page down.
     const document = readableDocument(snapshot)
@@ -245,6 +277,14 @@ export const HistoryStage = forwardRef<HistoryStageHandle, {
       fading.current?.cancel()
       fading.current = overlay.animate([{ opacity: 1 }, { opacity: 0 }], { duration: themeTime('--motion-history-dissolve'), easing: themeEasing('--ease-out'), fill: 'forwards' })
     }
+    // A settled step's new work lands in turn, held back from the tiles before
+    // the scene shows it.
+    if (pen.current && settled && previous && !first) {
+      const before = new Map(previous.elements.map(element => [element.id, element]))
+      const added = next.elements.filter(element => !before.has(element.id)), taken = pen.current.draw(newWork(next.elements, before))
+      inked.current = taken.size > 0 && next.elements.length - added.length === before.size
+        && next.elements.every(element => taken.has(element.id) || before.get(element.id) === element)
+    }
     shown.current = next
     if (moved) {
       const duration = Math.min(themeTime('--motion-history-move'), themeTime('--motion-history-step') * .9), easing = cubic(themeEasing('--ease-out')), start = performance.now()
@@ -269,7 +309,8 @@ export const HistoryStage = forwardRef<HistoryStageHandle, {
   // A settled change out of view brings the camera the least way to it, then
   // lights it once.
   useEffect(() => {
-    if (!api || !settled || !focus) { setMark(null); return }
+    if (!api || !settled || !focus) { setMark(null); following.current = Promise.resolve(); return }
+    setMark(null)
     const s = api.getAppState(), z = s.zoom.value, margin = themeLength('--space-8')
     const view = { x: -s.scrollX, y: -s.scrollY + insets.top / z, width: s.width / z, height: (s.height - insets.top - insets.bottom) / z }
     let target: StageCamera | undefined
@@ -285,11 +326,12 @@ export const HistoryStage = forwardRef<HistoryStageHandle, {
       target = { zoom, scrollX: -left, scrollY: -(top - insets.top / zoom) }
     }
     let cancelled = false
-    const light = () => { if (!cancelled) setMark({ key: performance.now(), bounds: focus, by }) }
-    if (target) void move(target, themeTime('--motion-history-follow'), cubic(themeEasing('--ease-sheet'))).then(light)
-    else light()
+    // Where the pen landed all the step changed, the pen was its light.
+    const shine = () => { if (!cancelled && light && !inked.current) setMark({ key: performance.now(), bounds: focus, by }) }
+    following.current = target ? move(target, themeTime('--motion-history-follow'), cubic(themeEasing('--ease-sheet'))) : Promise.resolve()
+    void following.current.then(shine)
     return () => { cancelled = true }
-  }, [api, snapshot, settled, focus])
+  }, [api, snapshot, settled, focus, light])
 
   // A click without a drag points at an object in the past; a drag pans.
   const down = useRef<{ x: number; y: number; t: number } | undefined>(undefined)
@@ -327,7 +369,9 @@ export const HistoryStage = forwardRef<HistoryStageHandle, {
     // click points and Bring back takes.
     onContextMenuCapture={event => { event.preventDefault(); event.stopPropagation() }}
     onWheelCapture={letGo}
-    onPointerDownCapture={letGo}
+    // A hand on the stage also lands the step's work at once; the wheel only
+    // moves the camera, as on the live canvas.
+    onPointerDownCapture={() => { pen.current?.finish(); letGo() }}
     onPointerDown={event => { if (event.button === 0) down.current = { x: event.clientX, y: event.clientY, t: event.timeStamp } }}
     onPointerUp={event => {
       const start = down.current; down.current = undefined
@@ -335,7 +379,7 @@ export const HistoryStage = forwardRef<HistoryStageHandle, {
       select.current(hit(event.clientX, event.clientY), event.shiftKey || event.metaKey)
     }}>
     <div className="history-engine">{box && <Excalidraw excalidrawAPI={setEngine} langCode="en" theme="light" zenModeEnabled viewModeEnabled
-      initialData={{ appState: { viewBackgroundColor: themeColor('background'), scrollX: box.scrollX, scrollY: box.scrollY, zoom: { value: box.zoom as AppState['zoom']['value'] } } }}
+      initialData={{ appState: { viewBackgroundColor: 'transparent', scrollX: box.scrollX, scrollY: box.scrollY, zoom: { value: box.zoom as AppState['zoom']['value'] } } }}
       UIOptions={{ allowKeyboardShortcut: () => false, canvasActions: { changeViewBackgroundColor: false, clearCanvas: false, export: false, loadScene: false, saveToActiveFile: false, toggleTheme: false } }}
       validateEmbeddable={link => link === HTML_EMBED_LINK || isVideoLink(link) ? true : undefined}
       renderEmbeddable={element => { const document = htmlDocument(element); return document ? <HtmlEmbed html={document.html} /> : null }}

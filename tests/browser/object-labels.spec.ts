@@ -22,7 +22,12 @@ const engineMarks = (page: Page, scope: string) => page.evaluate(scope => {
   const frame = document.querySelector(`${scope} iframe[title="HTML preview"]`)!.getBoundingClientRect()
   const canvas = document.querySelector(`${scope} canvas.excalidraw__canvas.static`) as HTMLCanvasElement, box = canvas.getBoundingClientRect(), scale = canvas.width / box.width
   const ink = canvas.getContext('2d')!
-  const read = (x: number, y: number, width: number, height: number) => ink.getImageData(Math.round((x - box.left) * scale), Math.round((y - box.top) * scale), Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale))).data
+  // the scene is transparent over the paper, so each pixel reads as what it shows over paper
+  const read = (x: number, y: number, width: number, height: number) => {
+    const data = ink.getImageData(Math.round((x - box.left) * scale), Math.round((y - box.top) * scale), Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale))).data
+    for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) data[i + c] = data[i + c]! * data[i + 3]! / 255 + 255 * (1 - data[i + 3]! / 255)
+    return data
+  }
   let darkest = 255, badge = 0
   for (let y = frame.top + 40; y < frame.bottom - 40; y += 9) {
     const edge = read(frame.left - 6, y, 6, 1)

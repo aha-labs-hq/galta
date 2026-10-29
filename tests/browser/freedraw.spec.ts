@@ -41,7 +41,7 @@ test('production history previews, continuation and reopening preserve old snaps
     const { scene: s, engineTest: t } = window as any
     t.apply([{ type: 'create_element', id: 'old-brush', elementType: 'freedraw', x: 200, y: 120,
       props: { points: [[0, 0], [160, 0], [160, 160], [0, 160], [0, 0]], strokeColor: '#000000', strokeWidth: 3 } }])
-    const snapshot = s.snapshot()
+    const snapshot = structuredClone(s.snapshot())
     const points = [
       ...Array.from({ length: 40 }, (_, i) => [40 + i * 4, 100]),
       ...Array.from({ length: 40 }, (_, i) => [200, 100 + i * 4]),
@@ -128,7 +128,7 @@ test('old strokes restore without rewriting history; rotated world geometry and 
     const { scene: s, engineTest: t } = window as any
     t.apply([{ type: 'create_element', id: 'stroke', elementType: 'freedraw', x: 50, y: 655,
       props: { points: [[0, 0], [80, 0], [80, 100], [0, 100]], simulatePressure: true, pressures: [] } }])
-    const old = s.snapshot(), el = old.document.elements[0]
+    const old = structuredClone(s.snapshot()), el = old.document.elements[0]
     Object.assign(el, { width: 200, height: 140, angle: .7, points: [[31, 106], [14, 219], [90, 150]], pressures: [.2], customData: { note: 'Preserve me' } })
     const original = JSON.stringify(old)
     const { exportToCanvas, getCommonBounds } = t
@@ -179,7 +179,11 @@ for (const deviceScaleFactor of [1, 2]) {
           const exported = c.getContext('2d')!.getImageData(0, 0, c.width, c.height)
           const canvas = document.querySelector<HTMLCanvasElement>('canvas.excalidraw__canvas.static')!
           const live = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height)
-          const dark = (pixels: ImageData, x: number, y: number) => pixels.data[(y * pixels.width + x) * 4] < 100
+          // the live scene is transparent over the paper, so a pixel is ink by what it shows over paper
+          const dark = (pixels: ImageData, x: number, y: number) => {
+            const i = (y * pixels.width + x) * 4, alpha = pixels.data[i + 3] / 255
+            return pixels.data[i] * alpha + 255 * (1 - alpha) < 100
+          }
           let exportedInk = 0, liveInk = 0, missing = 0, extra = 0
           for (let y = 200; y < 550; y++) for (let x = 150; x < 980; x++) {
             const lx = Math.round(x * zoom * devicePixelRatio), ly = Math.round(y * zoom * devicePixelRatio)

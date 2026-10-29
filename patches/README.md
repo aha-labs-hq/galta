@@ -92,19 +92,153 @@ Keep only Galta's initial preference and UI projection; rerun the geometry cases
 before removing the midpoint correction. This is a rectangular selection change,
 not a freeform lasso implementation.
 
+## Tiled static scene
+
+Upstream draws the interactive canvas from one cached bitmap per element, sized
+to the element at the current zoom, so memory grows with the element count and
+every zoom step re-rasterises every element. An agent's tracing of a few
+thousand brush strokes exhausted the renderer's canvas memory: at 2× pixel
+density the owner's 4,758-element canvas held 875 MB in 9,510 bitmaps, zooming
+took up to 2 s a frame and the canvas went blank
+([evidence](../docs/evidence/canvas-scale-2026-10-28/README.md)).
+
+`dist/staticTiles.js`, imported by both bundles, rasterises the static scene
+into 512-pixel tiles aligned to the world at the exact device scale and copies
+them to the screen. Nothing is cached per element, so bitmap memory is bounded
+and a frame costs the pixels on screen, whatever the element count.
+
+- Tiles are drawn by the native static renderer in its direct, export-style
+  branch (`renderConfig.directRender`). When the visible tiles to draw hold up
+  to 1,500 elements they finish within the frame, as upstream's pass does;
+  larger work is spread over frames in batches within an 8 ms budget, nearest
+  the centre first. A missing tile then shows the previous scale's pixels, and
+  a stale one keeps its pixels until the new ones are complete.
+- A uniform grid indexes element bounds, padded by `getCanvasPadding`.
+- A changed element re-renders the tiles under its old and new bounds and is
+  drawn above them while they are pending. A new object counts as a change
+  even at the same version, as it does for upstream's bitmaps: Time Machine
+  interpolates copies. An element added above everything a tile holds is
+  painted straight into it.
+- An element that changes again within 250 ms (a drag, an arrow bound to it)
+  is drawn live above the tiles instead, but only while nothing tiled belongs
+  over it, so the order stays exact. Once still it stays live until something
+  covers it or more than 64 are still. Erasure previews and the image being
+  cropped are always live. Live elements are drawn at the tiles' device-pixel
+  phase, so baking one back moves no pixel.
+- `ShapeCache.delete` and `destroy` also invalidate tiles: fonts, decoded
+  images, embed validation and resizes redraw without a new element version.
+  Theme, pixel density and frame rendering settings drop every tile.
+- Tiles live in a least-recently-used cache capped at 128 MiB; empty tiles hold
+  no bitmap. A first scene, another canvas or a restored version starts over.
+- Exports keep the upstream pass. Frame highlighting during a drag and the
+  element-link picker draw the whole visible scene directly, without
+  per-element bitmaps. Link badges are drawn above the tiles.
+
+`StaticCanvas` passes `sceneNonce`, so membership is compared only when the
+scene changes, not on every scroll. The hooks and their production aliases in
+0.18.1: `_renderStaticScene` (`dp`) and its throttled entry (`cp`); the direct
+branches of `renderElement` (`Fn`), where dark-mode images take
+`IMAGE_INVERT_FILTER` (`Ia`) unless exporting; `ShapeCache` (`Xe`);
+`getElementBounds` (`Ke`), `getCanvasPadding` (`ri`), `isIframeLikeElement`
+(`gt`), `renderLinkIcon` (`sp`) and rough (`Da`); `StaticCanvas`'s call (`Kx`
+in `prod/index.js`).
+
+`tests/browser/scene-scale.spec.ts` renders 6,000 strokes at 2× density (about
+1.5 GB of bitmaps without the module; under 160 MB with it, under 240 MB after
+zooming to 300%) and checks pixels through an addition, recolouring,
+reordering, deletion, a drag and zoom, and in every frame of a drag beneath
+another element. Run it in both bundle modes. On an upgrade, re-apply the hooks
+to the new renderer, or remove the module if upstream stops caching a bitmap
+per element.
+
+## Ink presentation and static scheduling
+
+`holdStaticElements(canvas, hold)` holds committed elements out of the static
+tiles while Galta's ink pen lands them (`apps/extension/src/canvas/inkPen.ts`).
+A hold owns ids, a membership version and a `paint()` callback, never artwork.
+Each render of the tiles calls `paint()` before synchronizing membership, and
+draws the elements it returns above everything, like live elements: by the
+native renderer, on the tiles' device pixels. An element the pen lets go is
+painted into the tiles by that same render, by that same renderer, so the
+hand-off moves no pixel. Releasing a hold restores every committed element.
+Exports never use a hold.
+
+`presentFreeDrawElement(element, outline)` (both bundles; production caches
+`C1` and `he`) shows a presentation copy of a brush stroke with an outline the
+caller built, here the stroke's prefix from `createFreeDrawPlayback` below: it
+fills the copy's path cache and records that a transparent stroke has no fill
+shape. The copy never enters the scene.
+
+A GPU canvas antialiases overlapping translucent strokes by how many it paints
+in one pass: painted into the tiles one stroke at a time, dense hatching
+settles visibly darker than any later render of the same tiles. The pen
+therefore lets finished work go in batches, presenting it natively until then
+(`BAKE` in `inkPen.ts`); do not lower that batch without measuring settled
+pixels against a complete render from screenshots. When the pen lets more than
+256 held elements go at once, the tiles they touch re-render in place, keeping
+their pixels until the new ones are complete, instead of starting over: what
+they show is right, only incomplete. A software tile backend was tried and
+removed: it matched pixels only by also slowing every re-rasterization.
+
+`staticSceneScheduler` owns the latest requested configuration and one pending
+frame per canvas. Native updates replace the configuration; presentation only
+asks to redraw it. Re-entering upstream's trailing RAF throttler with a captured
+configuration perpetuated old scenes alongside new ones, making completed ink
+disappear and undo leave pixels. Both bundle entry points now use this scheduler
+(dev `renderStaticSceneThrottled`, production `x7`; public entry `cp`).
+Omitting the throttle argument still draws synchronously, as upstream does:
+PNG exports and agent captures read their pixels immediately after that call.
+Native renderer teardown is global and happens before DOM removal. Cancellation
+therefore prunes detached canvases, and each queued frame checks its canvas is
+still connected; destroying Time Machine must not stop a live canvas's pen.
+`static-scene-scheduler.test.mjs` covers these three scheduling boundaries.
+
+`ink-pen.spec.ts` checks growth, the hand-off and settled pixels from
+screenshots at both device scales (reading a canvas back often moves it to
+software rendering, so read-backs would measure a renderer the user never
+sees), together with ordering, interruption, undo, stacking and long strokes.
+`history-browser.spec.ts` checks playback waiting and decodes the exported
+video to verify intermediate ink. Run them with the renderer suite in both
+bundle modes. An optional `GALTA_INK_REPLAY` operations file exercises private
+artwork without storing it in the repository. Remove the hold hook if upstream
+provides an equivalent presentation boundary; keep one scheduler authoritative
+for each canvas.
+
+`createFreeDrawPlayback(element)` in `freeDrawPath` is a forward-only cursor
+through one immutable stroke. It carries perfect-freehand 1.2.0's pressure,
+streamlining and outline state, using the same brush options as the native
+whole-stroke function. Only new source points are filtered. Outline points
+become stable once their successor is stable and they lie outside the native
+three-unit endpoint filter; stability uses committed filter length, never the
+provisional tip's length, which can recede at a sharp turn. The first ten
+samples establish starting pressure; before those stabilize, native computes
+the short starting outline. Processed sample windows are released.
+
+The cursor produces one closed Path2D with the native two-decimal coordinates,
+including caps and sharp corners. It does not split painted ink, simplify
+source points, change pressure, or write document state. Path assembly still
+scales with emitted outline geometry, but source filtering is linear over the
+whole playback rather than repeated for every prefix. `brush-playback.test.mjs`
+compares complete command streams against native, including dense points,
+pressure changes, reversals, repeated points and released sample windows; it
+also bounds source-point reads. Preserve the included upstream MIT notice and
+recheck parity before upgrading perfect-freehand. Only the active stroke owns
+a cursor; switching strokes or finishing drops it.
+
 ## Cooperative brush rendering
 
-`prepareFreeDrawElement(element, elementsMap, appState)` warms the existing
-native shape and bitmap caches without mutating document state or history.
+`prepareFreeDrawElement(element, elementsMap, appState)` warms the native
+shape cache (the brush outline and its Path2D) without mutating document state
+or history; the tiled static scene keeps no per-element bitmap to warm.
 Galta calls it between cooperative scheduling checkpoints, on the exact
 candidate objects that will enter the editor. This prevents the first native
 paint from constructing every brush outline in one task. Offscreen strokes
-keep normal lazy rendering. Cache ownership, invalidation, bitmap size limits
-and zoom invalidation remain entirely native. The shared outline adapter below
+keep normal lazy rendering. Shape cache ownership and invalidation remain
+entirely native. The shared outline adapter below
 owns pressure geometry for both native rendering and worker exports.
 
-The wrapper calls `ShapeCache.generateElementShape` and
-`generateElementWithCanvas` (production aliases `he` and `F1` in 0.18.1).
+The wrapper calls `ShapeCache.generateElementShape` (production alias `he` in
+0.18.1).
 `tests/browser/progressive-write.spec.ts` verifies progressive presentation,
 atomic persistence, native undo/redo and cancellation in both bundle modes.
 `freedraw.spec.ts` verifies native/export geometry and pixels. On upgrades,

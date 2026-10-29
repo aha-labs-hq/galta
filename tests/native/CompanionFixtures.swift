@@ -2,7 +2,7 @@ import Foundation
 
 func fixtureHealth(_ state: RuntimeHealth.Installation.State, available: Bool = true) -> RuntimeHealth {
     RuntimeHealth(version: "0.1.1", releaseId: "native-preview", channel: "development",
-                  runtime: .init(available: available, version: "0.154.0", error: available ? nil : "The bundled runtime could not start."),
+                  runtime: .init(available: available, version: nil, error: available ? nil : "Incomplete release: MacOS/galta-lock"),
                   installation: .init(state: state, detail: state == .repairRequired ? "Browser registration needs repair." : state == .conflict ? "This Mac is registered to a different Galta extension. Use the matching Mac app." : nil),
                   mcpCommand: state == .current && available ? "/preview/Galta/current/Resources/galta-mcp" : nil)
 }

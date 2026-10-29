@@ -33,6 +33,8 @@ export function resolveGaltaPaths({ platform = process.platform, home = homedir(
     runtimeDirectory: path.join(dataDirectory, 'runtime'),
     workspaceDirectory: path.join(dataDirectory, 'workspaces'),
     mediaDirectory: path.join(dataDirectory, 'media'),
+    /** Codex that Galta downloaded or kept, one directory per version. */
+    codexDirectory: path.join(dataDirectory, 'codex'),
     legacyDataDirectories: legacyDefault && legacyDefault !== dataDirectory ? [legacyDefault] : []
   }
 }

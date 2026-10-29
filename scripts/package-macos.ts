@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { COMPANION_PROTOCOL } from '../packages/runtime/src/lifecycle'
-import { checksum, codexExecutable, codexExecutables, codexPackageDirectory, runtimeBundle, runtimeBundleIdentifier, runtimeExecutable, type Release } from '../native/companion/release'
+import { checksum, runtimeBundle, runtimeBundleIdentifier, runtimeExecutable, type Release } from '../native/companion/release'
 import { minimumMacOS, root, run, validateDistribution, type Distribution } from './distribution/config'
 import { prepareDependencies } from './distribution/dependencies'
 import { createAppcast } from './distribution/appcast'
@@ -68,17 +68,13 @@ try {
   if (signIdentity !== '-' && (!runtimeIdentity.team || /\bcdhash\b/.test(runtimeIdentity.requirement))) throw new Error('Certificate signing must produce an identity that survives runtime updates')
   run(['/usr/bin/clang', '-O2', '-Wall', '-Wextra', '-Werror', '-target', `arm64-apple-macosx${minimumMacOS}`, 'native/companion/activation-lock.c', '-o', join(bin, 'galta-lock')])
   sign(join(bin, 'galta-lock'))
-  run(['/usr/bin/ditto', dependencies.codex, join(contents, codexPackageDirectory)])
-  for (const file of codexExecutables) {
-    await chmod(join(contents, file), 0o755)
-    sign(join(contents, file), file.endsWith('/codex-code-mode-host') ? join(root, 'native/companion/code-mode.entitlements.plist') : undefined)
-  }
+  // Codex is not bundled: Chat in Galta uses the user's own, or a copy the
+  // runtime downloads when the user asks (native/companion/codex.ts).
   // Resolve the immutable release once. Existing hosts and their children keep it across updates.
   for (const [name, role] of [['canvas-bridge', 'canvas'], ['codex-bridge', 'codex'], ['mcp', 'mcp'], ['companion', 'companion']] as const) {
     const launcher = join(resources, `galta-${name}`)
-    await writeFile(launcher, `#!/bin/sh\nset -eu\nGALTARELEASE="$(CDPATH= cd -P -- "$(dirname -- "$0")/.." && pwd -P)"\nexport GALTA_RELEASE_DIRECTORY="$GALTARELEASE"\nexport GALTA_BUNDLED_CODEX_BIN="$GALTARELEASE/${codexExecutable}"\nexport GALTA_MCP_BIN="$GALTARELEASE/Resources/galta-mcp"\nexec "$GALTARELEASE/${runtimeExecutable}" ${role} "$@"\n`, { mode: 0o755 })
+    await writeFile(launcher, `#!/bin/sh\nset -eu\nGALTARELEASE="$(CDPATH= cd -P -- "$(dirname -- "$0")/.." && pwd -P)"\nexport GALTA_RELEASE_DIRECTORY="$GALTARELEASE"\nexport GALTA_MCP_BIN="$GALTARELEASE/Resources/galta-mcp"\nexec "$GALTARELEASE/${runtimeExecutable}" ${role} "$@"\n`, { mode: 0o755 })
   }
-  await copyFile(dependencies.codexLicense, join(resources, 'Codex-LICENSE'))
   const files: Record<string, string> = {}
   async function recordFiles(directory: string) {
     for (const entry of await readdir(join(runtime, directory), { withFileTypes: true })) {
@@ -118,9 +114,29 @@ try {
   }
   const label = `Galta-${version}${production ? `-${config.build}` : ''}-mac-arm64${production ? '' : '-local-candidate'}`
   const companion = join(output, `${label}.zip`), diskImage = join(output, `${label}.dmg`)
-  const dmgRoot = join(staging, 'disk'); await mkdir(dmgRoot)
-  run(['/usr/bin/ditto', app, join(dmgRoot, 'Galta.app')]); await symlink('/Applications', join(dmgRoot, 'Applications'))
-  run(['/usr/bin/hdiutil', 'create', '-quiet', '-volname', 'Galta', '-fs', 'APFS', '-srcfolder', dmgRoot, '-format', 'UDZO', join(staging, 'Galta.dmg')])
+  // The install window: Galta's paper with the app and Applications in place.
+  // dmgbuild writes Finder's layout without driving Finder; LZMA keeps the download small.
+  const window = join(staging, 'install-window')
+  run(['/usr/bin/swift', 'scripts/render-dmg-background.swift', window])
+  run(['/usr/bin/tiffutil', '-cathidpicheck', join(window, 'background.png'), join(window, 'background@2x.png'), '-out', join(window, 'background.tiff')])
+  const layout = await Bun.file(join(window, 'layout.json')).json() as { width: number; height: number; app: [number, number]; applications: [number, number] }
+  const python = process.env.GALTA_PYTHON ?? 'python3'
+  if (!/^3\.(1\d|[2-9]\d)\./.test(run([python, '-c', 'import platform; print(platform.python_version())']).trim())) throw new Error(`dmgbuild needs Python 3.10 or later; set GALTA_PYTHON (found ${python})`)
+  const builder = join(staging, 'dmgbuild')
+  run([python, '-m', 'venv', builder]); run([join(builder, 'bin/pip'), 'install', '--quiet', '--no-index', '--no-deps', ...dependencies.dmgbuild])
+  await writeFile(join(window, 'settings.py'), [
+    `format = 'ULMO'`, `filesystem = 'APFS'`, `files = [${JSON.stringify(app)}]`, `symlinks = {'Applications': '/Applications'}`,
+    `icon = ${JSON.stringify(join(resources, 'AppIcon.icns'))}`, `background = ${JSON.stringify(join(window, 'background.tiff'))}`,
+    `window_rect = ((200, 140), (${layout.width}, ${layout.height}))`, `default_view = 'icon-view'`, `icon_size = 128`, `text_size = 13`,
+    `icon_locations = {'Galta.app': (${layout.app.join(', ')}), 'Applications': (${layout.applications.join(', ')})}`,
+    `show_status_bar = False`, `show_tab_view = False`, `show_toolbar = False`, `show_pathbar = False`, `show_sidebar = False`, `show_icon_preview = False`,
+  ].join('\n') + '\n')
+  run([join(builder, 'bin/dmgbuild'), '-s', join(window, 'settings.py'), 'Galta', join(staging, 'Galta.dmg')])
+  // What a user drags must be the very app signed above.
+  const mount = join(staging, 'mounted'); await mkdir(mount)
+  run(['/usr/bin/hdiutil', 'attach', '-quiet', '-nobrowse', '-readonly', '-mountpoint', mount, join(staging, 'Galta.dmg')])
+  try { run(['/usr/bin/codesign', '--verify', '--deep', '--strict', join(mount, 'Galta.app')]) }
+  finally { run(['/usr/bin/hdiutil', 'detach', '-quiet', mount]) }
   if (production) {
     sign(join(staging, 'Galta.dmg'))
     await notarize(join(staging, 'Galta.dmg'), notary!, notaryEvidence)
@@ -129,7 +145,12 @@ try {
     run(['/usr/sbin/spctl', '-a', '-t', 'open', '--context', 'context:primary-signature', join(staging, 'Galta.dmg')])
   }
   const extension = join(output, `Galta-extension-${version}${production ? '' : '-local-candidate'}.zip`)
-  run(['/usr/bin/zip', '-X', '-q', '-r', join(staging, 'extension.zip'), '.'], extensionDirectory)
+  // Same source, same bytes: every file carries the source commit's time (UTC), in a sorted order.
+  const utc = { ...process.env, TZ: 'UTC' }
+  const stamp = run(['git', 'show', '-s', '--format=%cd', '--date=format-local:%Y%m%d%H%M.%S', sourceCommit], root, utc).trim()
+  const entries = run(['/usr/bin/find', '.', '-type', 'f'], extensionDirectory).trim().split('\n').sort()
+  run(['/usr/bin/touch', '-t', stamp, ...entries], extensionDirectory, utc)
+  run(['/usr/bin/zip', '-X', '-q', '-D', join(staging, 'extension.zip'), ...entries], extensionDirectory, utc)
   await rename(archive, companion); await rename(join(staging, 'Galta.dmg'), diskImage); await rename(join(staging, 'extension.zip'), extension)
   if (production) await copyFile(await createAppcast(companion, staging, dependencies.sparkle, config, releaseNotes), join(output, 'appcast.xml'))
   const artifact = async (path: string) => ({ file: basename(path), sha256: checksum(await readFile(path)) })

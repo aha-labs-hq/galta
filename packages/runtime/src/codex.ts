@@ -1,4 +1,4 @@
-import { CODEX_EXECUTION_POLICY } from './codexConfig'
+import { CODEX_EXECUTION_POLICY, CODEX_THREAD_CONFIG } from './codexConfig'
 import { codexInstructions } from './codexInstructions'
 import { assertGaltaToolContract, CANVAS_MESSAGE_LABEL, canvasMessageContextSchema } from '@galta/canvas'
 import { artifactDeliveryDeclarationSchema, CANVAS_REGION_IDS, type CanvasChangeRegion } from '@galta/domain'
@@ -353,7 +353,9 @@ export class CodexAgentRuntime implements AgentRuntime<CodexAgentInput, CodexAge
       await assertGaltaToolContract(settings?.toolContract)
       if (current.abort.signal.aborted) { yield { state: 'stopped' }; return }
       const instructions = codexInstructions()
-      const config = { model: input.runtime.modelId, cwd: input.execution.cwd, sandbox: CODEX_EXECUTION_POLICY.sandbox, approvalPolicy: CODEX_EXECUTION_POLICY.approvalPolicy }
+      // Thread settings are passed on resume and fork too: a thread reloaded
+      // after an app-server restart takes its configuration from the request.
+      const config = { model: input.runtime.modelId, cwd: input.execution.cwd, sandbox: CODEX_EXECUTION_POLICY.sandbox, approvalPolicy: CODEX_EXECUTION_POLICY.approvalPolicy, config: CODEX_THREAD_CONFIG }
       // Galta's tool catalog and execution belong exclusively to MCP.
       // Turn paging is skipped here: the conversation is reconciled separately,
       // and resuming with full history only adds startup cost.

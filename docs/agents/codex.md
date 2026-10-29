@@ -9,8 +9,8 @@ built-in chat. External agents connect directly through Galta MCP.
 1. On first use, opening Galta starts only the independent canvas bridge. Choosing **Chat in Galta** in Settings checks the existing account; opening Settings or **Work in Codex or Claude Code** does not start or authenticate Codex. A previously enabled built-in chat reconnects on opening Galta.
 2. The composer shows the connection action when disconnected; its model menu shows the connected account and usage. There is no API-key form.
 3. The Galta Mac app installs and registers the runtime; choose **Connect browser** there. Standalone [adapter installation](../../native/adapters/codex/README.md) remains a developer workflow. A missing runtime produces an error.
-4. Once installed, the bridge starts the user's local `codex app-server`.
-   Packaged development builds currently pin Codex `0.162.0-alpha.17.2`, whose catalog includes GPT-6.1 Sol, GPT-6 Astra, Sol and Luna; the provider and account still decide which models are actually available. Galta reads `model/list` from this bundled runtime, so updating the desktop Codex app alone does not update Galta's model catalog.
+4. Once installed, the bridge starts `codex app-server` from the user's own Codex when it is at least the pinned version (`0.162.0-alpha.17.2`), found in ChatGPT for Mac, Codex for Mac or the usual CLI and npm locations. Without one, **Chat in Galta** offers **Download Codex**, which fetches that pinned official package into Galta's data directory; nothing downloads without the click. [Distribution](../distribution.md#codex-for-chat-in-galta) owns the lookup, the download and the copy kept from apps that bundled Codex.
+   Galta reads `model/list` from the Codex it runs, so the user's own Codex brings its own catalog and updates with it; the pinned version's catalog includes GPT-6.1 Sol, GPT-6 Astra, Sol and Luna. The provider and account still decide which models are actually available.
 5. If the user is already signed in to Codex, Galta loads the account, the complete paginated model catalog and usage metadata. Galta checks again when the runtime menu opens, the app regains focus or resumes, a turn completes, or the reported quota window reaches its next reset. Account and usage notifications update the workspace even when the menu is closed. The menu shows the account's mark and plan, Effort, and a read-only remaining-quota meter with a tooltip identifying the current usage window. It has no refresh button. A still-available selected model is preserved; a new workspace follows the provider's default model.
 6. If the account is missing or Codex cannot recover an invalid credential, Galta offers `Sign in with ChatGPT` and removes the previous account and quota from view. Only clicking the sign-in action starts authorization. Recovering the account never submits a draft or replays a failed turn.
 7. Sign-in opens the official authorization URL in one centered 480 × 720 browser popup, bounded by the original window's dimensions. Repeated clicks focus the same popup. The source page and canvas remain in the original window.
@@ -71,7 +71,7 @@ It does not patch the binary, intercept model requests, or rewrite Codex rollout
 databases, cache keys or compaction state. The former offline tool-declaration
 repair has been removed; historical evidence and user backups remain historical
 records, not supported maintenance instructions. There is no supported removal
-field for declarations retained by a legacy thread in bundled 0.162.0-alpha.17.2. Such
+field for declarations retained by a legacy thread in 0.162.0-alpha.17.2. Such
 history is preserved; start a new conversation to obtain a fresh tool catalog.
 
 ## Current transport
@@ -83,7 +83,8 @@ Chrome's native-messaging API is the narrow bridge: the service worker has the `
 Each direction owns its UTF-8 decoder so concurrent traffic cannot corrupt split
 characters. Either peer closing cancels both read loops and ends the relay.
 An explicit `GALTA_CODEX_BIN` is authoritative: an invalid path fails without
-silently switching to another installation.
+silently switching to another installation. Without any Codex, the relay answers
+every request with the step that sets it up instead of exiting.
 
 ## Agent contract
 
@@ -111,9 +112,10 @@ MCP owns the canvas/webpage contract and schemas; they are not repeated in each
 turn. The adapter identifies Galta as a browser extension with its own canvas,
 usually beside an independent webpage, and directs tools to the supplied execution.
 This explicitly revokes the historical English-only rule and earlier image-route
-configuration. It does not overwrite history, base instructions or collaboration
-modes. Resuming an already-loaded thread does not reliably replace its original
-developer instructions; the turn boundary covers new, continued and forked runs.
+configuration. It does not overwrite history or collaboration modes. Resuming an
+already-loaded thread does not reliably replace its original developer
+instructions; the turn boundary covers new, continued and forked runs.
+
 This is instruction delivery, not a deterministic output-language validator or a
 provider prompt-cache guarantee. Trusted canvas context contains project/branch
 identity; the structured observation and viewport image accompany the user
@@ -143,7 +145,7 @@ does not repeat that policy in its application instructions. See the
 content review for evidence,
 remaining limitations and ownership decisions.
 
-The bundled 0.162.0-alpha.17.2 schemas require `experimentalApi` for
+The pinned 0.162.0-alpha.17.2 schemas require `experimentalApi` for
 `additionalContext`; history-node `lastTurnId` forks are part of the stable schema.
 This capability opts into protocol fields, not the code-mode feature. The
 app-server owns its local code-mode host and
@@ -194,6 +196,48 @@ HTTP servers from user, CLI and trusted workspace configuration, and checks that
 process configuration remains unchanged.
 The remaining `request_user_input` tool is rejected if invoked by the utility.
 See the official [configuration schema](https://developers.openai.com/codex/config-schema.json).
+
+Conversation threads carry per-thread settings as well, `CODEX_THREAD_CONFIG`
+in `packages/runtime/src/codexConfig.ts`, passed on start, resume and fork. The
+embedded process shares the user's CODEX_HOME for sign-in, and with it their
+coding setup. Measured on 2026-10-27 against the bundled app-server and a local
+fixture, a Galta request on the owner's Mac carried a skills catalogue of about
+25k characters and the permissions, collaboration-mode and apps blocks, none of
+which serve a canvas. The settings switch them off:
+`skills.include_instructions`, `include_permissions_instructions`,
+`include_collaboration_mode_instructions` and `include_apps_instructions` are
+false. Only Galta's threads change. No `mcp_servers` table is sent: a
+per-thread table replaces the process's server table and removes the galta
+server with it. Two inherited blocks have no per-thread switch in
+0.162.0-alpha.17.2: the global `CODEX_HOME/AGENTS.md`, which only a separate
+home (and a second sign-in) would remove, and the multi-agent role, which
+follows the model catalog's `multi_agent_version`.
+
+Every one of these settings acts after the prefix a request shares with the
+prompt cache, and Galta keeps that prefix as Codex has it. Codex keys the cache
+per thread, so a new thread's first request is cached only for a prefix that is
+common across Codex: the tool block and the base prompt. On 2026-10-27 two
+alternatives were measured in real runs and rejected because they lose it.
+Declaring Galta's tools up front (`omit_tools_from=["deferred"]`) put Galta's
+schemas at the start of the tool block, and first requests went from 12,160
+cached tokens to none in 13 of 16 runs; a one-line chat cost three times as
+much. Replacing the base prompt with Galta's own kept the tool block (8,064
+cached) but gave up the rest. With Codex's tool block, Codex's base prompt and
+these settings, first requests keep the 12,160 cached tokens and carry about
+4,100 uncached ones instead of about 9,400. Feature switches that change the
+tool block (`features.plugins`, `apps`, `goals`) are left alone for the same
+reason.
+
+Galta's MCP tools therefore stay deferred in Code Mode. The host guidance names
+them and asks the agent to load the declarations it needs in one step, once per
+conversation; before this, agents searched `ALL_TOOLS` three to five times per
+task, printing up to 14.7k tokens of truncated descriptions. It also says how to
+see a returned picture, `image()` on its image part: `text()` of a whole capture
+result turns the picture into base64 the model cannot see, which on 2026-10-27
+left an agent reporting a drawing it had never looked at. And it says the
+preview attached to a message is already a capture, to answer from it when it
+shows enough: an agent told to look at visual work had captured the canvas three
+times to count five pictures.
 
 Codex memory is one store per `CODEX_HOME`, shared with the user's coding
 sessions, with no per-application scope. The embedded process therefore sets
@@ -407,4 +451,4 @@ for the observed failure path and the scope of verification.
 
 ## Release boundary
 
-The extension package can be published independently. The bridge installer must ship a signed native binary for each supported platform and register a manifest with the production extension ID. The installer must also verify that an official Codex CLI/app-server is available; the bridge must not download or replace a user's Codex installation without an explicit user action.
+The extension package can be published independently. The bridge installer must ship a signed native binary for each supported platform and register a manifest with the production extension ID. Galta never downloads Codex without the user's explicit **Download Codex**, and never updates, replaces or configures a Codex the user installed; its own copy lives only in Galta's data directory.

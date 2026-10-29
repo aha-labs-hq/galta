@@ -10,6 +10,15 @@ import SwiftUI
     var body: some Scene {
         Window("Galta Preview", id: "setup") {
             SetupView(model: model, browsers: browsers).task {
+                // `-GaltaPreviewState <name>` and `-GaltaPreviewAppearance light|dark` open one
+                // state in the background, for window captures that leave the screen alone.
+                let launch = UserDefaults.standard
+                switch launch.string(forKey: "GaltaPreviewAppearance") {
+                case "light": NSApp.appearance = NSAppearance(named: .aqua)
+                case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+                default: break
+                }
+                if let name = launch.string(forKey: "GaltaPreviewState") { await select(name); return }
                 NSApp.activate(ignoringOtherApps: true)
                 await model.refresh()
             }

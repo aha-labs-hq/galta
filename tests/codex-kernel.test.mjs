@@ -1,6 +1,7 @@
 import { test, expect } from 'bun:test'
 import { CodexAgentRuntime, additionalContext, conversationItem, encodeNativeMessages, NativeMessageDecoder } from '../packages/runtime/src/index.ts'
 import { codexInstructions } from '../packages/runtime/src/codexInstructions.ts'
+import { CODEX_THREAD_CONFIG } from '../packages/runtime/src/codexConfig.ts'
 import { CANVAS_MESSAGE_LABEL, CANVAS_SELECTION_ROUTING_INSTRUCTIONS, CANVAS_COORDINATE_INSTRUCTIONS, CANVAS_TOOL_NAMES, canvasMessageContextSchema, summarizeCanvasEvidence } from '../packages/canvas/src/index.ts'
 import { galtaToolContract } from '../packages/canvas/src/contract'
 
@@ -63,9 +64,17 @@ test('the runtime supplies an MCP execution context without registering a second
   expect(thread.cwd).toBe('/tmp/galta')
   expect(thread.approvalPolicy).toBe('never')
   expect(thread.sandbox).toBe('danger-full-access')
+  // Codex's base prompt and tool block are the prefix a thread's first request
+  // shares with the prompt cache; Galta changes neither.
   expect(thread.baseInstructions).toBeUndefined()
   expect(thread.developerInstructions).toBeUndefined()
   expect(thread.dynamicTools).toBeUndefined()
+  // The user's coding setup stays out of canvas threads, and a per-thread
+  // server table would replace the process's galta server, so none is sent.
+  expect(thread.config).toEqual(CODEX_THREAD_CONFIG)
+  expect(thread.config['skills.include_instructions']).toBe(false)
+  expect(Object.keys(thread.config).some(key => key.startsWith('mcp_servers'))).toBe(false)
+  expect(Object.keys(thread.config).some(key => key.startsWith('features.'))).toBe(false)
   expect(t.calls.find(c => c.method === 'turn/start').params.outputSchema).toBeUndefined()
   const turn = t.calls.find(c => c.method === 'turn/start').params
   expect(turn.input[0].text).toBe(input.instruction)
@@ -322,6 +331,8 @@ test('continued and forked sessions receive the MCP contract without registering
     expect(request.params.developerInstructions).toBeUndefined()
     expect(request.params.dynamicTools).toBeUndefined()
     expect(request.params.excludeTurns).toBe(true)
+    expect(request.params.config).toEqual(CODEX_THREAD_CONFIG)
+    expect(request.params.baseInstructions).toBeUndefined()
     // Resume may ignore configuration for a loaded thread. The actual turn
     // carries the user-authorized full-access policy explicitly.
     const turn = t.calls.find(c => c.method === 'turn/start').params
@@ -701,4 +712,17 @@ test('keeping the canvas working reaches agents through both live channels', asy
   // Only the canvas mechanism is named: nothing here costs a user who connected no provider.
   expect(codexInstructions()).not.toMatch(/generate_|generation_|BytePlus|OpenRouter|Higgsfield|\bfal\b/)
   expect(GALTA_MCP_INSTRUCTIONS).not.toMatch(/generate_|generation_|BytePlus|OpenRouter|Higgsfield|\bfal\b/)
+})
+
+test('agents are told to look at visual work, and how to see a picture in Code Mode', async () => {
+  const { CANVAS_LOOKING_INSTRUCTIONS, CANVAS_LOOKING_BRIEF, GALTA_MCP_INSTRUCTIONS } = await import('../packages/canvas/src/instructions')
+  expect(codexInstructions()).toContain(CANVAS_LOOKING_INSTRUCTIONS)
+  expect(GALTA_MCP_INSTRUCTIONS).toContain(CANVAS_LOOKING_BRIEF)
+  expect(CANVAS_LOOKING_INSTRUCTIONS).toMatch(/reference at high detail with grid/)
+  // text() of a capture result once turned the picture into truncated base64.
+  expect(codexInstructions()).toContain("image(result.content.find(part => part.type === 'image'))")
+  // Tools stay deferred for the cache; naming them spares the agent a search.
+  for (const name of CANVAS_TOOL_NAMES) expect(codexInstructions()).toContain(name)
+  expect(codexInstructions()).toContain('load the declarations you need in one step')
+  expect(codexInstructions()).toContain('answer from it when it shows enough')
 })

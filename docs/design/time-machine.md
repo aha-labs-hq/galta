@@ -50,12 +50,16 @@ shows history.
   along its path) and takes its outermost group, bound text and frame
   members; Shift adds to the choice. A past document takes no pointer, links
   in the past never open, and right-click does nothing.
+  The return flight follows native camera animation: reuse raster tiles while
+  zoom is moving, then render the exact final scale. Interrupted, immediate and
+  reduced-motion returns clear the temporary zoom-cache flag as well.
 - The ruler slides under a fixed playhead. Drag follows the pointer and a
   release glides on with its speed; a click seeks; the wheel and trackpad over
   the controls scrub. A scrub cuts from moment to moment; where it settles,
-  the moment dissolves in, the camera makes the smallest move that shows its
-  change if that is out of view, and a light traces the change once: Galta's
-  light for Galta's work, ink for the user's.
+  the moment dissolves in, its new work lands by the pen (see Ink), the camera
+  makes the smallest move that shows its change if that is out of view, and a
+  light traces the change once: Galta's light for Galta's work, ink for the
+  user's.
 - Keys: ←/→ one moment, Shift+←/→ one session, Option+←/→ one version, ↑ into
   another future that branches from the current moment, cycling through all of
   them in recency order; where nothing branches from the moment ↑ just entered,
@@ -119,8 +123,11 @@ shows history.
   the canvas retains an error notice. The migration backup, a separate
   export, is not cut.
 - **Play** walks the path, or the trimmed range, one moment per
-  `--motion-history-step`. A seek, Compare, naming, hiding the page or closing
-  pauses it.
+  `--motion-history-step`, waiting for each moment to land: the camera makes
+  the smallest move that shows its change, as a settled step does, and its ink
+  is drawn there. Play lights nothing. A seek,
+  Compare, naming, hiding the page or closing pauses it; pausing lands the
+  moment's ink at once.
 - Pending imports or a running agent disable Time Machine. A newer head from
   another window rejects Restore and Bring back inside the database
   transaction; a cut does not need the head, which it never removes. A failed
@@ -161,6 +168,21 @@ checkpoints go with them, each cut version leaves where its work continues
 (`trimmedVersions`), and the storage write releases every snapshot and asset
 no remaining version uses. `normalizeWorkspace` still turns retired
 saved directions into names and drops retired clips and hidden marks on read.
+
+## Ink
+
+The stage lands a settled moment's new work with the live canvas's pen
+([contract](canvas-reveal-and-grouping.md)): the moment's topmost run of new
+elements in stacking order, each stroke drawn along its own points, anything
+else appearing at its turn. A scrub cuts directly; stepping again lands the
+previous drawing at once, as do a hand on the stage, pausing, hiding the page
+and reduced motion; the wheel only moves the camera. Where the pen lands all a
+step changed, it is the step's light, and the change light stays off. Play and
+video export wait for a moment's camera move and ink before advancing; an export's wait ends
+when the recording is aborted or the stage closes. The pen draws on the stage
+canvas itself, so a recording carries its intermediate frames. Drawing speed
+is inferred from each stroke's length, not replayed from timestamps; moments,
+storage and undo are unchanged.
 
 ## Verification
 

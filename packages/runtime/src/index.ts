@@ -1,7 +1,7 @@
 import type { ConversationItem, ProjectId, RuntimeContext } from '@galta/domain'
 export type { ConversationItem } from '@galta/domain'
 export { NativeMessageDecoder, encodeNativeMessages } from './transport'
-export { COMPANION_PROTOCOL, REQUIRED_CAPABILITIES, assessCompanion, type CompanionHealth, type SetupStatus } from './lifecycle'
+export { COMPANION_PROTOCOL, REQUIRED_CAPABILITIES, assessCompanion, type CodexAvailability, type CodexDownload, type CompanionHealth, type SetupStatus } from './lifecycle'
 export { CODEX_EMBEDDED_CONFIG, CODEX_EMBEDDED_ARGS, CODEX_EXECUTION_POLICY, assertCodexEmbeddedConfig } from './codexConfig'
 export { CodexAgentRuntime, additionalContext, conversationItem, type CodexJsonRpcNotification, type CodexRpcClient } from './codex'
 export { CodexMetadata, type GeneratedNames } from './codexMetadata'

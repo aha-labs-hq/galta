@@ -3,6 +3,8 @@ import { galtaPaths } from '../paths'
 import { readRelease } from './release'
 import { assertRegistration, ReleaseChangedError } from './registration'
 import { inspectRelease } from './health'
+import { inspectCodex, startCodexDownload } from './codex'
+import { runtimeCommand } from '../launch'
 import { createNativeSender } from '../messaging'
 import { mediaSettings } from '../media/settings'
 
@@ -31,7 +33,7 @@ for await (const chunk of Bun.stdin.stream()) {
   try {
     const { release } = await readRelease(directory)
     if (origin !== `chrome-extension://${release.extensionId}/`) throw new Error('Unexpected extension origin')
-    if (message.method !== 'status' && message.method !== 'media/settings') { await fail('Update Galta for Mac to use this.'); break }
+    if (message.method !== 'status' && message.method !== 'media/settings' && message.method !== 'codex/download') { await fail('Update Galta for Mac to use this.'); break }
     try { await assertRegistration(directory, release.extensionId) }
     catch (error) {
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
@@ -39,7 +41,11 @@ for await (const chunk of Bun.stdin.stream()) {
       break
     }
     if (message.method === 'media/settings') await send(await mediaSettings(message.params))
-    else await send({ ...await inspectRelease(directory), mcpCommand: join(galtaPaths.dataDirectory, 'current', 'Resources', 'galta-mcp') })
+    else {
+      // Downloading Codex is always the user's explicit request; the reply is the status that follows.
+      if (message.method === 'codex/download') await startCodexDownload(runtimeCommand('codex-download'))
+      await send({ ...await inspectRelease(directory), codex: await inspectCodex(), mcpCommand: join(galtaPaths.dataDirectory, 'current', 'Resources', 'galta-mcp') })
+    }
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
     await fail('Galta for Mac couldn’t answer. Open Galta on your Mac to check the connection.')

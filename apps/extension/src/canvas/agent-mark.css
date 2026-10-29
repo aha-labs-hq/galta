@@ -1,8 +1,7 @@
 /* The agent's light around a change, in the dock's own light: a pale line on
    a mid-tone wash traces the outline, holds while the reader finds it, and
    fades. A faint tint lifts the area without hiding the artwork. */
-/* The canvas's decoration layer, shared with the reveal in canvas-presentation.css. */
-.agent-mark { position: absolute; z-index: 1; overflow: visible; pointer-events: none; }
+.agent-mark { position: absolute; z-index: var(--layer-canvas-decoration); overflow: visible; pointer-events: none; }
 .agent-mark rect { rx: var(--radius-control); }
 .agent-mark-life { animation: agent-mark-life var(--motion-mark) linear forwards; }
 .agent-mark-tint { fill: var(--agent-light-wash); opacity: .08; }

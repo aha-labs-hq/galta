@@ -112,6 +112,107 @@ test('sign-in reveals the composer without automatically submitting', async ({ p
   expect(await page.evaluate(() => (window as unknown as { submitted: number }).submitted)).toBe(0)
 })
 
+/** The scenario's companion answers status and Download Codex, replacing the
+ * canvas port's always-ready status (a Mac app that bundled Codex). */
+async function answerCompanion(page: import('@playwright/test').Page) {
+  await page.addInitScript(() => {
+    const fixture = window as unknown as { chrome: { runtime: { sendMessage(message: { type: string }): Promise<unknown> } }; requests: string[]; companion(message: { type: string }): Promise<unknown> }
+    const runtime = fixture.chrome.runtime, previous = runtime.sendMessage.bind(runtime)
+    runtime.sendMessage = message => message.type === 'setup-status' || message.type === 'codex-download'
+      ? (fixture.requests.push(message.type), fixture.companion(message)) : previous(message)
+  })
+}
+
+test('Chat in Galta without Codex downloads it on request, shows progress, then signs in', async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    const download = { version: '0.162.0-alpha.17.2', bytes: 132_097_637 }
+    const fixture = window as unknown as { chrome: unknown; requests: string[] }
+    fixture.requests = []
+    let received = -1
+    const health = (codex: unknown) => ({ state: 'ready', health: { protocol: 1, version: '0.1.5', releaseId: 'fixture', channel: 'development', capabilities: ['canvas/1', 'codex/1', 'mcp/1'], runtime: { available: true }, codex } })
+    // Each status check after the request advances the download; the fourth finds it installed.
+    const codex = () => received < 0 ? { state: 'missing', download } : received >= download.bytes ? { state: 'ready', version: download.version, source: 'galta' } : { state: 'downloading', received, download }
+    Object.assign(fixture, { companion: async (message: { type: string }) => {
+      if (message.type === 'codex-download') { received = 0; return health(codex()) }
+      if (received >= 0) received = Math.min(download.bytes, received + 45_000_000)
+      return health(codex())
+    } })
+    fixture.chrome = { runtime: {
+      id: 'abcdefghijklmnopabcdefghijklmnop',
+      getURL: (path: string) => new URL(`/${path}`, location.origin).href,
+      onMessage: { addListener() {}, removeListener() {} },
+      connect: () => ({ onMessage: { addListener() {} }, onDisconnect: { addListener() {} }, postMessage() {}, disconnect() {} }),
+      sendMessage: async (message: { type: string }) => {
+        fixture.requests.push(message.type)
+        if (message.type === 'codex-connect') return { ok: true, requiresAuth: true }
+        return { ok: true, result: {} }
+      },
+    } }
+  })
+  await installCanvasPort(page)
+  await answerCompanion(page)
+  await page.setViewportSize({ width: 1280, height: 860 })
+  await page.goto('/canvas/index.html')
+  await page.locator('.conversation-dock').getByRole('button', { name: 'Connect an agent', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: /^Chat in Galta/ }).click()
+  await expect(dialog.getByText('Chat in Galta runs on Codex, OpenAI’s agent. Galta uses yours when you have it, or downloads it for you (132 MB).', { exact: true })).toBeVisible()
+  await expect(dialog.locator('.settings-row').filter({ hasText: /^Codex/ })).toHaveText('CodexNot installed')
+  await expect(dialog.getByRole('button', { name: 'Installed or updated Codex? Check again', exact: true })).toBeVisible()
+  // Nothing downloads and no account is checked until the user asks.
+  expect(await page.evaluate(() => (window as unknown as { requests: string[] }).requests.filter(type => type.startsWith('codex-')))).toEqual([])
+  await dialog.screenshot({ path: testInfo.outputPath('codex-missing.png') })
+  await dialog.getByRole('button', { name: 'Download Codex', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: /^Downloading Codex… \d+%$/ })).toBeDisabled()
+  await expect(dialog.getByText('Downloading Codex. Keep working on your canvas while it finishes.', { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Downloading Codex… 34%', exact: true })).toBeVisible()
+  await dialog.screenshot({ path: testInfo.outputPath('codex-downloading.png') })
+  // Installed: chat connects by itself and asks for the account, as it does with the user's own Codex.
+  await expect(dialog.getByRole('button', { name: 'Sign in with ChatGPT', exact: true })).toBeVisible()
+  await page.getByText('Connection details', { exact: true }).click()
+  await expect(dialog.getByText('Galta 0.1.5 · Codex 0.162.0-alpha.17.2 (Galta’s copy)', { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => (window as unknown as { requests: string[] }).requests.filter(type => type.startsWith('codex-')))).toEqual(['codex-download', 'codex-connect'])
+})
+
+for (const [state, codex, message, action] of [
+  ['outdated', { state: 'outdated', version: '0.150.0', source: 'yours', minimum: '0.162.0-alpha.17.2', download: { version: '0.162.0-alpha.17.2', bytes: 132_097_637 } }, 'Your Codex 0.150.0 is older than Galta supports. Update it, or let Galta download its own (132 MB).', 'Download Codex'],
+  ['outdated Galta copy of', { state: 'outdated', version: '0.150.0', source: 'galta', minimum: '0.162.0-alpha.17.2', download: { version: '0.162.0-alpha.17.2', bytes: 132_097_637 } }, 'This version of Galta needs a newer Codex than the one it downloaded (0.150.0). Download the update (132 MB), or use your own Codex.', 'Download the update'],
+  // A newer Mac app's report this extension cannot read, as the background's
+  // assessCompanion passes it on: Chat asks for an update; the Mac app stays ready.
+  ['unreadable', { state: 'unrecognized' }, 'Update Galta in this browser to use Chat with this version of Galta for Mac.', 'Check again'],
+  ['failed', { state: 'failed', error: 'Codex couldn’t be downloaded. Check your internet connection and try again.', download: { version: '0.162.0-alpha.17.2', bytes: 132_097_637 } }, 'Codex couldn’t be downloaded. Check your internet connection and try again.', 'Try again'],
+] as const) test(`Chat in Galta with ${state} Codex names the next step`, async ({ page }, testInfo) => {
+  await page.addInitScript(codex => {
+    const fixture = window as unknown as { chrome: unknown; requests: string[] }
+    fixture.requests = []
+    Object.assign(fixture, { companion: async () => ({ state: 'ready', health: { protocol: 1, version: '0.1.5', releaseId: 'fixture', channel: 'development', capabilities: ['canvas/1', 'codex/1', 'mcp/1'], runtime: { available: true }, codex } }) })
+    fixture.chrome = { runtime: {
+      id: 'abcdefghijklmnopabcdefghijklmnop',
+      getURL: (path: string) => new URL(`/${path}`, location.origin).href,
+      onMessage: { addListener() {}, removeListener() {} },
+      connect: () => ({ onMessage: { addListener() {} }, onDisconnect: { addListener() {} }, postMessage() {}, disconnect() {} }),
+      sendMessage: async (message: { type: string }) => {
+        fixture.requests.push(message.type)
+        return { ok: true, result: {} }
+      },
+    } }
+  }, codex)
+  await installCanvasPort(page)
+  await answerCompanion(page)
+  await page.setViewportSize({ width: 380, height: 640 })
+  await page.goto('/canvas/index.html')
+  await page.locator('.conversation-dock').getByRole('button', { name: 'Connect an agent', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: /^Chat in Galta/ }).click()
+  await expect(dialog.getByText(message, { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: action, exact: true })).toBeEnabled()
+  expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+  await expect(dialog.locator('.settings-row').filter({ hasText: /^Galta for Mac/ }).first()).toHaveText('Galta for MacReady')
+  await dialog.screenshot({ path: testInfo.outputPath(`codex-${state.replaceAll(' ', '-')}.png`) })
+  // Chat never connects to a Codex it cannot use.
+  expect(await page.evaluate(() => (window as unknown as { requests: string[] }).requests.filter(type => type.startsWith('codex-')))).toEqual([])
+})
+
 test('a manual preview check gives feedback and expanded details fit a short panel', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 320, height: 500 })
   await page.goto('/canvas/index.html')

@@ -6,6 +6,13 @@ export function themeColor(name: 'background' | 'foreground' | 'muted-foreground
   return value
 }
 
+/** A font-family token, for text drawn into a raster rather than the DOM. */
+export function themeFont(name: 'font-ui' | 'font-code'): string {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim()
+  if (!value) throw new Error(`Galta theme is missing --${name}`)
+  return value
+}
+
 /** A length token in pixels, for geometry the DOM cannot measure directly.
  * Returns the number, not the string, because callers do arithmetic with it. */
 export function themeLength(name: string): number {

@@ -215,17 +215,19 @@ export function HistoryBrowser({ workspace, currentId, title, disabled, onOpen, 
     return () => observer.disconnect()
   }, [open, arrived])
 
-  // Playback walks the path (or the trimmed range) at an even step.
+  // Playback walks the path (or the trimmed range) at an even step, waiting
+  // for a moment's ink to be drawn.
   useEffect(() => {
     if (!playing || !layout) return
     const end = trim ? trim.to : path.length - 1
     if (index >= end) { setPlaying(false); return }
-    const timer = setTimeout(() => seek(index + 1, 'play'), themeTime('--motion-history-step'))
-    return () => clearTimeout(timer)
+    let cancelled = false
+    const timer = setTimeout(() => void (stage.current?.drawn() ?? Promise.resolve()).then(() => { if (!cancelled) seek(index + 1, 'play') }), themeTime('--motion-history-step'))
+    return () => { cancelled = true; clearTimeout(timer) }
   }, [playing, index, layout, trim])
 
   const play = () => {
-    if (playing) { setPlaying(false); return }
+    if (playing) { stage.current?.finishDrawing(); setPlaying(false); return }
     if (path.length < 2) return
     const start = trim ? trim.from : 0, end = trim ? trim.to : path.length - 1
     if (index >= end || index < start) seek(start, 'play')
@@ -381,7 +383,7 @@ export function HistoryBrowser({ workspace, currentId, title, disabled, onOpen, 
           else if (event.code === 'Space' && !element.closest('button')) { event.preventDefault(); play() }
         }}>
         <Dialog.Title className="sr-only">Time Machine</Dialog.Title>
-        {open && shown && <HistoryStage ref={stage} version={comparing ? view.project.headCommitId : target ?? ''} snapshot={shown} focus={comparing || leaving || motion !== 'step' ? null : focus} by={moment?.source === 'agent' ? 'agent' : 'user'}
+        {open && shown && <HistoryStage ref={stage} version={comparing ? view.project.headCommitId : target ?? ''} snapshot={shown} focus={comparing || leaving || motion === 'cut' ? null : focus} light={motion === 'step'} by={moment?.source === 'agent' ? 'agent' : 'user'}
           settled={motion !== 'cut' && !comparing} label={comparing ? 'Current canvas' : 'Selected moment'} live={liveView} files={files} insets={insets}
           selected={objects} onSelect={(ids, additive) => setObjects(previous => additive ? [...new Set([...previous.filter(id => !ids.includes(id)), ...ids.filter(id => !previous.includes(id))])] : ids)}
           onReady={() => setArrived(true)} />}

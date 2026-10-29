@@ -21,6 +21,32 @@ export const CODEX_EMBEDDED_CONFIG = {
   'memories.generate_memories': false
 } as const
 
+/** Per-thread settings for Galta conversations. The embedded process shares
+ * the user's CODEX_HOME for sign-in, and with it their coding setup. Measured
+ * on 2026-10-27, these switches remove what a canvas never uses: the skills
+ * catalogue (about 25k characters on the owner's Mac) and the permissions,
+ * collaboration-mode and apps blocks. They apply to Galta's threads only; the
+ * user's files and other Codex sessions are untouched.
+ *
+ * Every switch here acts after the request's shared prefix. Codex keys its
+ * prompt cache per thread, so a thread's first request hits the cache only for
+ * a prefix that is common across Codex: the tool block and the base prompt.
+ * Declaring Galta's tools up front or replacing the base prompt made that
+ * prefix Galta's own, and first requests went from 12,160 cached tokens to
+ * none. Feature switches that change the tool block (plugins, apps, goals) are
+ * left alone for the same reason.
+ *
+ * Deliberately absent: a per-thread `mcp_servers` table replaces the
+ * process's server table, which removes the galta server itself. The global
+ * AGENTS.md and the multi-agent role have no per-thread switch in
+ * 0.162.0-alpha.17.2. */
+export const CODEX_THREAD_CONFIG = {
+  'skills.include_instructions': false,
+  include_permissions_instructions: false,
+  include_collaboration_mode_instructions: false,
+  include_apps_instructions: false
+} as const
+
 // These values are strings, string arrays and booleans, whose JSON is also valid TOML.
 export const CODEX_EMBEDDED_ARGS = Object.entries(CODEX_EMBEDDED_CONFIG)
   .flatMap(([key, value]) => ['-c', `${key}=${JSON.stringify(value)}`])

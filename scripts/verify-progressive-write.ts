@@ -17,7 +17,7 @@ try {
       t.apply(base); s.fit(); w.replayBase = s.snapshot()
       await new Promise(resolve => setTimeout(resolve, 300))
       const gaps: number[] = [], tasks: number[] = [], stages: Record<string, number[]> = {}
-      for (const name of ['prepare', 'present', 'prepareRender', 'snapshot', 'applyPrepared']) {
+      for (const name of ['prepare', 'prepareRender', 'snapshot', 'applyPrepared']) {
         const original = s[name].bind(s)
         s[name] = (...args: any[]) => {
           const start = performance.now(), result = original(...args)
@@ -26,14 +26,11 @@ try {
           record(); return result
         }
       }
-      let done = false, previous = performance.now(), previewFrames = 0, maxPaths = 0
+      let done = false, previous = performance.now()
       const observer = new PerformanceObserver(list => tasks.push(...list.getEntries().map(entry => entry.duration)))
       observer.observe({ entryTypes: ['longtask'] })
       const frame = () => {
         const now = performance.now(); gaps.push(now - previous); previous = now
-        const paths = document.querySelectorAll('.canvas-presentation [data-preview]').length
-        if (paths) previewFrames++
-        maxPaths = Math.max(maxPaths, paths)
         if (!done) requestAnimationFrame(frame)
       }
       requestAnimationFrame(frame)
@@ -42,7 +39,7 @@ try {
       const elapsed = performance.now() - start
       await new Promise(resolve => setTimeout(resolve, 100))
       done = true; observer.disconnect()
-      return { elapsed, maxFrame: Math.max(...gaps), longTasks: tasks, previewFrames, maxPaths, stages, elements: s.elements.length }
+      return { elapsed, maxFrame: Math.max(...gaps), longTasks: tasks, stages, elements: s.elements.length }
     }, replay)
     const cancellation = await page.evaluate(async operations => {
       const w = window as any, t = w.engineTest, s = w.scene
@@ -50,16 +47,19 @@ try {
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
       const before = t.revision(), controller = new AbortController()
       let requested = 0, delivered = 0, failure = ''
-      const observer = new MutationObserver(() => {
-        if (requested || !document.querySelector('.canvas-presentation [data-preview]')) return
-        requested = performance.now()
-        setTimeout(() => { delivered = performance.now(); controller.abort(new Error('Stopped')) }, 0)
-      })
-      observer.observe(document.querySelector('.canvas-presentation')!, { subtree: true, childList: true })
+      // Stop arrives while the edit's brushes are prepared, before its commit.
+      const prepare = s.prepareRender, bound = prepare.bind(s)
+      s.prepareRender = (...args: any[]) => {
+        if (!requested) {
+          requested = performance.now()
+          setTimeout(() => { delivered = performance.now(); controller.abort(new Error('Stopped')) }, 0)
+        }
+        return bound(...args)
+      }
       try { await t.tool('canvas_edit', { revision: before, operations }, { signal: controller.signal }) }
       catch (error) { failure = String(error) }
-      observer.disconnect()
-      if (!requested || !failure.includes('Stopped') || before !== t.revision() || document.querySelector('.canvas-presentation [data-preview]')) throw new Error('Cancellation did not preserve the original document')
+      s.prepareRender = prepare
+      if (!requested || !failure.includes('Stopped') || before !== t.revision()) throw new Error('Cancellation did not preserve the original document')
       return { inputDelay: delivered - requested, settledAfterInput: performance.now() - delivered, preserved: true }
     }, replay.operations)
     runs.push({ ...metrics, cancellation })

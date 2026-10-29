@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { seedWorkspace } from '../helpers/stored-workspace'
 import { installReturningAccount } from '../helpers/canvas-port'
 import { acceptanceOrigin } from '../../scripts/lib/acceptance'
@@ -220,6 +221,205 @@ test('a step that only moved objects glides them there; reduced motion steps at 
   await page.emulateMedia({ reducedMotion: 'reduce' })
   sampling = frames(); await page.waitForTimeout(30); await page.keyboard.press('ArrowLeft')
   expect(await sampling).toBeLessThanOrEqual(2)
+})
+
+/** A straight brush stroke as saved, 400 px long. */
+const savedStroke = (id: string, y: number, index: string) => ({
+  id, type: 'freedraw', x: 700, y, width: 400, height: 0, angle: 0, strokeColor: '#39332e', backgroundColor: 'transparent', fillStyle: 'solid',
+  strokeWidth: 2, strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [], frameId: null, index, roundness: null, seed: 7, version: 3, versionNonce: 70,
+  isDeleted: false, boundElements: null, updated: 1, link: null, locked: false,
+  points: Array.from({ length: 201 }, (_, p) => [p * 2, 0]), pressures: [], simulatePressure: true, lastCommittedPoint: [400, 0]
+})
+
+/** What the stage shows each frame for `ms`: its inked pixels (sampled) and
+ * whether the light is up. */
+const watchStage = (page: Page, ms: number) => page.evaluate(ms => new Promise<{ tiles: number; mark: boolean }[]>(resolve => {
+  const frames: { tiles: number; mark: boolean }[] = [], start = performance.now()
+  const inked = (canvas: HTMLCanvasElement | null) => {
+    if (!canvas?.width) return 0
+    const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data
+    let n = 0
+    for (let i = 3; i < data.length; i += 28) if (data[i]) n++
+    return n
+  }
+  const sample = () => {
+    frames.push({ tiles: inked(document.querySelector('.history-canvas canvas.excalidraw__canvas.static')), mark: !!document.querySelector('.history-mark') })
+    if (performance.now() - start < ms) requestAnimationFrame(sample); else resolve(frames)
+  }
+  requestAnimationFrame(sample)
+}), ms)
+
+async function seedInk(page: Page, external = false, x = 700) {
+  const replay = external && process.env.GALTA_INK_REPLAY ? JSON.parse(readFileSync(process.env.GALTA_INK_REPLAY, 'utf8')) as any[] : null
+  await seed(page, w => {
+    const top = w.snapshots['review-main-12'].document.elements.map((element: any) => element.index).sort().at(-1)
+    const strokes = replay ? replay.map((op, i) => {
+      const points = op.props.points as number[][]
+      const xs = points.map(p => p[0]!), ys = points.map(p => p[1]!)
+      return { ...savedStroke(`replay-${i}`, op.y, ''), ...op.props, x: op.x, y: op.y,
+        index: null, width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys),
+        lastCommittedPoint: points.at(-1) }
+    }) : [{ ...savedStroke('saved-ink-a', 300, `${top}V`), x }, { ...savedStroke('saved-ink-b', 340, `${top}W`), x }]
+    // Version 11 only draws: its image stays where version 10 left it.
+    w.snapshots['review-main-11'].document.elements[0] = structuredClone(w.snapshots['review-main-10'].document.elements[0])
+    for (const id of ['review-main-11', 'review-main-12']) w.snapshots[id].document.elements.push(...structuredClone(strokes))
+  }, true, replay ? 2 + replay.length : 4)
+}
+
+test('a step that only adds strokes draws them as its light, and Play waits for the ink @serial', async ({ page }) => {
+  await seedInk(page)
+  await openHistory(page)
+  await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft')
+  await expect(stage(page)).toHaveAttribute('data-version', 'review-main-10')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  // Let the light of the step back to version 10 finish (`--motion-mark`).
+  await page.waitForTimeout(2000)
+
+  const watching = watchStage(page, 2500)
+  await page.waitForTimeout(30); await page.keyboard.press('ArrowRight')
+  const frames = await watching
+  await expect(stage(page)).toHaveAttribute('data-version', 'review-main-11')
+  // Two 400 px strokes take about 1.4 s at a hand's pace: many partial states,
+  // and ink once drawn stays drawn.
+  const settled = frames.at(-1)!.tiles
+  expect(new Set(frames.map(f => f.tiles)).size).toBeGreaterThan(10)
+  expect(settled).toBeGreaterThan(frames[0]!.tiles)
+  frames.slice(1).forEach((f, i) => expect(f.tiles).toBeGreaterThanOrEqual(frames[i]!.tiles - 2))
+  expect(frames.some(f => f.mark)).toBe(false)
+
+  await page.keyboard.press('ArrowLeft')
+  await expect(stage(page)).toHaveAttribute('data-version', 'review-main-10')
+  await page.waitForTimeout(300)
+  const arrivals = page.evaluate(() => new Promise<Record<string, number>>(resolve => {
+    const seen: Record<string, number> = {}, target = document.querySelector('.history-canvas')!
+    const observer = new MutationObserver(() => {
+      const version = target.getAttribute('data-version')!
+      seen[version] ??= performance.now()
+      if (version === 'review-main-12') { observer.disconnect(); resolve(seen) }
+    })
+    observer.observe(target, { attributes: true, attributeFilter: ['data-version'] })
+  }))
+  await page.keyboard.press('Space')
+  const seen = await arrivals
+  // Without ink a moment plays for one 160 ms step.
+  expect(seen['review-main-12']! - seen['review-main-11']!).toBeGreaterThan(1000)
+
+  await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft')
+  await expect(stage(page)).toHaveAttribute('data-version', 'review-main-10')
+  await page.keyboard.press('Space')
+  await expect(stage(page)).toHaveAttribute('data-version', 'review-main-11')
+  await page.getByRole('button', { name: 'Pause', exact: true }).click()
+  // Pausing lands the moment's ink at once: after the render that lands it,
+  // nothing more is drawn.
+  const paused = await watchStage(page, 600)
+  expect(new Set(paused.slice(2).map(f => f.tiles)).size).toBe(1)
+  await expect(stage(page)).toHaveAttribute('data-version', 'review-main-11')
+})
+
+test('Play brings the camera to ink drawn out of view and draws it there @serial', async ({ page }) => {
+  // Version 11 draws far to the right of everything version 10 shows.
+  await seedInk(page, false, 6000)
+  await openHistory(page)
+  await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft')
+  await expect(stage(page)).toHaveAttribute('data-version', 'review-main-10')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.waitForTimeout(2000)
+
+  const watching = watchStage(page, 1400)
+  await page.waitForTimeout(30); await page.keyboard.press('Space')
+  const frames = await watching
+  // One 160 ms step shows version 11 and its 420 ms follow lands by about
+  // 0.6 s. The strokes can only be on the stage once the camera has come to
+  // them, and there they are still being drawn: ink grows and stays.
+  const after = frames.slice(Math.round(frames.length * .5))
+  expect(new Set(after.map(f => f.tiles)).size).toBeGreaterThan(5)
+  expect(after.at(-1)!.tiles).toBeGreaterThan(after[0]!.tiles)
+  after.slice(1).forEach((f, i) => expect(f.tiles).toBeGreaterThanOrEqual(after[i]!.tiles - 2))
+  // Play waits for the ink, and lights nothing.
+  await expect(stage(page)).toHaveAttribute('data-version', 'review-main-11')
+  expect(frames.some(f => f.mark)).toBe(false)
+})
+
+test('a dense ink history returns from a zoomed view without changing the live canvas @serial', async ({ page }, info) => {
+  test.skip(!process.env.GALTA_INK_REPLAY, 'Set GALTA_INK_REPLAY to a local operations JSON file')
+  test.setTimeout(120_000)
+  await page.addInitScript(() => {
+    const w = window as any, raf = requestAnimationFrame.bind(window)
+    w.flightTimes = []; w.measureFlight = false
+    window.requestAnimationFrame = callback => raf(time => {
+      const start = performance.now()
+      try { callback(time) } finally { if (w.measureFlight) w.flightTimes.push(performance.now() - start) }
+    })
+  })
+  await seedInk(page, true)
+  const pixels = await live(page).evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())
+  await openHistory(page)
+  await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft')
+  await expect(stage(page)).toHaveAttribute('data-version', 'review-main-10')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.keyboard.press('ArrowRight')
+  await expect(stage(page)).toHaveAttribute('data-version', 'review-main-11')
+  await page.waitForTimeout(7000)
+  const box = (await staged(page).boundingBox())!
+  const zoom = page.locator('.history-engine .reset-zoom-button')
+  const beforeZoom = await zoom.textContent()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.keyboard.down('Control'); await page.mouse.wheel(0, -150); await page.keyboard.up('Control')
+  await expect(zoom).not.toHaveText(beforeZoom!)
+  // Let the wheel's native temporary zoom cache end before the closing flight.
+  await page.waitForTimeout(500)
+  await page.evaluate(() => { (window as any).measureFlight = true })
+  await page.getByRole('button', { name: 'Close Time Machine', exact: true }).click()
+  await expect(dialog(page)).toHaveCount(0)
+  const metrics = await page.evaluate(() => {
+    const w = window as any; w.measureFlight = false
+    const times = w.flightTimes as number[]; times.sort((a, b) => a - b)
+    return { callbacks: times.length, p95: times[Math.floor(times.length * .95)], maximum: times.at(-1), total: times.reduce((a, b) => a + b, 0) }
+  })
+  await info.attach('history-flight', { body: JSON.stringify(metrics), contentType: 'application/json' })
+  expect(metrics.callbacks).toBeGreaterThan(5)
+  expect(await live(page).evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())).toBe(pixels)
+  await expect(page.getByRole('button', { name: 'Open Time Machine', exact: true })).toBeFocused()
+})
+
+test('ink is present in intermediate frames of the exported Time Machine video @serial', async ({ page }, info) => {
+  await seedInk(page, true)
+  await previewHistory(page, 'review-main-10')
+  await page.getByRole('button', { name: 'Trim', exact: true }).click()
+  const start = page.getByRole('slider', { name: 'Trim start', exact: true })
+  await start.focus(); await page.keyboard.press('End')
+  await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  const downloading = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export video', exact: true }).click()
+  const file = await downloading
+  const videoPath = info.outputPath(file.suggestedFilename())
+  await file.saveAs(videoPath)
+  const bytes = Buffer.concat(await (await file.createReadStream()).toArray())
+  const frames = await page.evaluate(async data => {
+    const video = document.createElement('video'), canvas = document.createElement('canvas')
+    const url = URL.createObjectURL(new Blob([Uint8Array.from(data)]))
+    try {
+      const loaded = new Promise<void>((resolve, reject) => { video.onloadedmetadata = () => resolve(); video.onerror = () => reject(new Error('Exported video cannot decode')) })
+      video.src = url; await loaded
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight
+      const ctx = canvas.getContext('2d')!, counts: number[] = []
+      for (let t = .15; t < video.duration; t += .12) {
+        const seeked = new Promise<void>(resolve => { video.onseeked = () => resolve() })
+        video.currentTime = t; await seeked; ctx.drawImage(video, 0, 0)
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+        let dark = 0
+        for (let i = 0; i < pixels.length; i += 4) if (pixels[i]! < 100 && pixels[i + 1]! < 100 && pixels[i + 2]! < 100) dark++
+        counts.push(dark)
+      }
+      return { duration: video.duration, counts }
+    } finally { video.removeAttribute('src'); video.load(); URL.revokeObjectURL(url); canvas.width = canvas.height = 0 }
+  }, [...bytes])
+  const before = frames.counts[2]!, after = frames.counts.at(-1)!
+  expect(after - before).toBeGreaterThan(200)
+  expect(frames.counts.filter(n => n > before + 100 && n < after - 100).length).toBeGreaterThan(4)
+  await info.attach('decoded-frames', { body: JSON.stringify(frames), contentType: 'application/json' })
+  await info.attach('ink-video', { path: videoPath })
 })
 
 test('every control is reachable at desktop and sidebar sizes', async ({ page }) => {

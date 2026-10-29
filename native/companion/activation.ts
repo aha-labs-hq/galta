@@ -3,9 +3,11 @@ import { copyFile, lstat, mkdir, readdir, readFile, readlink, realpath, rename, 
 import { dirname, join } from 'node:path'
 import { galtaPaths } from '../paths'
 import { prepareGaltaDataDirectory } from '../dataDirectory'
+import { adoptBundledCodex, inspectCodex } from './codex'
 import { hostRoles, readRelease } from './release'
 import { inspectRelease } from './health'
 import { lockActivation } from './lock'
+import { atomicFile, runningCommands } from './system'
 import { registeredExtensionId, registrationDirectory } from './registration'
 
 type SavedFile = { path: string; contents: string | null }
@@ -29,11 +31,6 @@ async function selectedRelease() {
     return await readlink(current)
   } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e }
 }
-async function atomicFile(path: string, contents: string) {
-  const temporary = `${path}.${crypto.randomUUID()}.tmp`
-  try { await writeFile(temporary, contents, { mode: 0o600, flag: 'wx' }); await rename(temporary, path) }
-  finally { await rm(temporary, { force: true }) }
-}
 async function selectRelease(target: string | null) {
   if (target === null) { await rm(current, { force: true }); return }
   const temporary = join(root, `.current-${crypto.randomUUID()}`)
@@ -50,14 +47,6 @@ async function restore(journal: Journal) {
     else await atomicFile(file.path, file.contents)
   }
   await rm(journalPath)
-}
-
-/** Every running command line, executable path included. */
-async function runningCommands() {
-  const ps = Bun.spawn(['/bin/ps', '-axww', '-o', 'comm=', '-o', 'args='], { stdout: 'pipe', stderr: 'pipe' })
-  const [code, output, errors] = await Promise.all([ps.exited, new Response(ps.stdout).text(), new Response(ps.stderr).text()])
-  if (code !== 0) throw new Error(`Running processes could not be listed. ${errors.trim()}`)
-  return output
 }
 
 /** After a switch, under the lock: remove every other release, and the
@@ -83,7 +72,7 @@ export async function activateRelease(source: string) {
   if (process.platform !== 'darwin') throw new Error('The companion currently supports macOS')
   const { release, bytes, id } = await readRelease(source, true)
   const health = await inspectRelease(source)
-  if (!health.runtime.available) throw new Error(health.runtime.error ?? 'The bundled AI runtime is unavailable')
+  if (!health.runtime.available) throw new Error(health.runtime.error ?? 'The Galta runtime is incomplete')
   await prepareGaltaDataDirectory()
   const unlock = await lockActivation(lock, join(source, 'MacOS/galta-lock'))
   let staging: string | undefined
@@ -134,9 +123,10 @@ export async function activateRelease(source: string) {
       await selectRelease(`releases/${id}`)
       await rm(journalPath)
     } catch (error) { await restore(journal); throw error }
-    // Cleanup never undoes a completed switch; its outcome is reported with it.
+    // Keeping a bundled Codex and cleanup never undo a completed switch; their outcomes are reported with it.
+    const adoption = previous && previous !== `releases/${id}` ? await adoptBundledCodex(join(root, previous)).then(version => version ? { adoptedCodex: version } : {}, (error: unknown) => ({ adoptionError: error instanceof Error ? error.message : String(error) })) : {}
     const cleanup = await removeUnusedReleases(releases, id).then(removedReleases => ({ removedReleases }), (error: unknown) => ({ removedReleases: [], cleanupError: error instanceof Error ? error.message : String(error) }))
-    return { ...health, directory: await realpath(current), installation: { state: 'current' as const }, mcpCommand: join(current, 'Resources/galta-mcp'), ...cleanup }
+    return { ...health, codex: await inspectCodex(), directory: await realpath(current), installation: { state: 'current' as const }, mcpCommand: join(current, 'Resources/galta-mcp'), ...adoption, ...cleanup }
   } finally {
     if (staging) await rm(staging, { recursive: true, force: true })
     await unlock()

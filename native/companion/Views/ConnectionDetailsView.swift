@@ -13,6 +13,7 @@ struct ConnectionDetailsView: View {
             Section {
                 LabeledContent("App runtime", value: model.health.map { $0.runtime.available ? "Available" : "Unavailable" } ?? (model.operation != nil ? "Checking…" : "Not checked"))
                 LabeledContent("Installation", value: registration)
+                if let codex = model.health?.codex { LabeledContent("Codex for Chat in Galta", value: Self.describe(codex)) }
                 Text("Your browser checks its connection when you open Galta. Manage agent sign-in from the canvas. You can close the Mac window and keep creating.")
                     .font(.callout).foregroundStyle(.secondary)
                 Button(model.operation?.label ?? "Check connection") { Task { await model.refresh() } }
@@ -59,6 +60,17 @@ struct ConnectionDetailsView: View {
         guard let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String else { return version }
         return "\(version) (\(build))"
     }
+    /// Galta uses the user's own Codex, or downloads one when asked in the browser.
+    static func describe(_ codex: RuntimeHealth.Codex) -> String {
+        switch codex.state {
+        case "ready": "\(codex.version ?? "Ready")\(codex.source == "yours" ? " · yours" : codex.source == "galta" ? " · Galta’s copy" : "")"
+        case "downloading": "Downloading…"
+        case "failed": "Download didn’t finish · try again from Galta’s Settings in your browser"
+        case "outdated": "Update needed · download it from Galta’s Settings in your browser"
+        default: "Not installed · download it from Galta’s Settings in your browser"
+        }
+    }
+
     private var registration: String {
         guard let health = model.health else { return model.operation != nil ? "Checking…" : "Not checked" }
         return switch health.installation.state {

@@ -33,10 +33,14 @@ export async function prepareCanvasMessage(tool: CanvasTool, submitted: Submitte
   const page = read.structuredContent as { revision: string; elementCount: number; elements: CanvasMessageElement[]; coverage: { total: number }; evidence?: CanvasEvidence }
   const changes = submitted.changes ?? { since: null, status: 'initial' as const, elements: [] }
   const sample = <T>(items: readonly T[], total = items.length) => ({ total, items: items.slice(0, CANVAS_MESSAGE_RECORDS), truncated: total > Math.min(items.length, CANVAS_MESSAGE_RECORDS) })
+  // The same numbers the marked preview draws, whether its pixels are attached
+  // now or were attached by an earlier message with this document and view.
+  const { x, y, width, height } = submitted.viewport
+  const marks = new Map(tool.marks({ region: { x, y, width, height } }).marks.flatMap(mark => mark.ids.map(id => [id, mark.label] as const)))
   const context: CanvasMessage['context'] = {
     commitId, revision: page.revision, viewport: submitted.viewport, elementCount: page.elementCount,
     selection: sample(submitted.selection),
-    visible: sample(page.elements.map(({ id, kind, bounds }) => ({ id, kind, bounds })), page.coverage.total),
+    visible: sample(page.elements.map(({ id, kind, bounds }) => ({ id, kind, bounds, ...(marks.has(id) ? { mark: marks.get(id)! } : {}) })), page.coverage.total),
     changes: { ...sample(changes.elements), since: changes.since, status: changes.status },
     ...(page.evidence ? { evidence: [summarizeCanvasEvidence(canvasEvidenceSchema.parse(page.evidence))] } : {}),
     preview: { status: 'empty', unrenderedCount: 0 }
@@ -46,8 +50,7 @@ export async function prepareCanvasMessage(tool: CanvasTool, submitted: Submitte
   else if (page.coverage.total) {
     let capturedRevision: string | undefined
     try {
-      const { x, y, width, height } = context.viewport
-      const capture = await tool.execute('canvas_capture', { region: { x, y, width, height }, detail: 'low' }, scope)
+      const capture = await tool.execute('canvas_capture', { region: { x, y, width, height }, detail: 'low', marks: true }, scope)
       const pixels = capture.content.find(part => part.type === 'image')
       if (!pixels || pixels.type !== 'image') throw new Error('Canvas observation returned no image')
       image = { dataUrl: `data:${pixels.mimeType};base64,${pixels.data}` }

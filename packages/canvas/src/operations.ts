@@ -12,11 +12,16 @@ const targetSchema = identitySchema.describe('Required target: copy an element i
 const endpointSchema = z.union([identitySchema, z.null()]).describe('Target element id; null detaches; omitted leaves unchanged.')
 const textSchema = z.string().max(4000)
 const positiveSchema = z.number().gt(0)
+/** Excalidraw draws a brush stroke with a pen 4.25 × strokeWidth wide
+ * (`freeDrawPath.js`), while shapes and lines draw strokeWidth itself. An agent
+ * that assumes pixels draws brush strokes four times too heavy. */
+export const STROKE_WIDTH_DESCRIPTION = 'Line weight. Shapes, lines and arrows draw about strokeWidth px; a brush (freedraw) draws a pen about 4.25 × strokeWidth px wide (0.5 ≈ 2 px, 1 ≈ 4 px), so fine brush linework needs 0.3 to 1.'
+export const POINTS_DESCRIPTION = 'Path coordinates relative to x/y, required for freedraw creation. The first point becomes the native origin without moving the drawing; width/height are derived. A brush curve needs a point every few px; a handful of points draws a coarse polyline. Read back geometry before subsequent edits.'
 const nativePropsSchema = z.strictObject({
   width: z.number().min(0), height: z.number().min(0), strokeColor: colorSchema, backgroundColor: colorSchema,
-  fillStyle: z.enum(['solid', 'hachure', 'cross-hatch', 'zigzag']), strokeWidth: positiveSchema,
+  fillStyle: z.enum(['solid', 'hachure', 'cross-hatch', 'zigzag']), strokeWidth: positiveSchema.describe(STROKE_WIDTH_DESCRIPTION),
   strokeStyle: z.enum(['solid', 'dashed', 'dotted']), roughness: z.union([z.literal(0), z.literal(1), z.literal(2)]), opacity: z.number().min(0).max(100),
-  points: z.array(z.tuple([z.number(), z.number()])).min(2).describe('Path coordinates relative to x/y, required for freedraw creation. The first point becomes the native origin without moving the drawing; width/height are derived. Read back geometry before subsequent edits.'),
+  points: z.array(z.tuple([z.number(), z.number()])).min(2).describe(POINTS_DESCRIPTION),
   pressures: z.array(z.number().min(0).max(1)).describe('With simulatePressure:false, provide one pressure for every point, including when replacing points.'),
   simulatePressure: z.boolean().describe('Defaults to true for new brush strokes. Set false to use explicit pressures.'),
   text: textSchema, originalText: textSchema, fontSize: positiveSchema, lineHeight: positiveSchema, autoResize: z.boolean(),
@@ -120,8 +125,8 @@ export const CANVAS_OPERATION_DEFINITIONS = Object.fromEntries(Object.entries(op
 // converter cannot expose as a useful operation union.
 const hostProps = {
   width: { type: 'number', minimum: 0 }, height: { type: 'number', minimum: 0 }, strokeColor: { type: 'string' }, backgroundColor: { type: 'string' },
-  fillStyle: { enum: ['solid', 'hachure', 'cross-hatch', 'zigzag'] }, strokeWidth: { type: 'number', exclusiveMinimum: 0 }, strokeStyle: { enum: ['solid', 'dashed', 'dotted'] },
-  roughness: { enum: [0, 1, 2] }, opacity: { type: 'number', minimum: 0, maximum: 100 }, points: { type: 'array', minItems: 2, items: { type: 'array', minItems: 2, maxItems: 2, items: { type: 'number' } } },
+  fillStyle: { enum: ['solid', 'hachure', 'cross-hatch', 'zigzag'] }, strokeWidth: { type: 'number', exclusiveMinimum: 0, description: STROKE_WIDTH_DESCRIPTION }, strokeStyle: { enum: ['solid', 'dashed', 'dotted'] },
+  roughness: { enum: [0, 1, 2] }, opacity: { type: 'number', minimum: 0, maximum: 100 }, points: { type: 'array', minItems: 2, items: { type: 'array', minItems: 2, maxItems: 2, items: { type: 'number' } }, description: POINTS_DESCRIPTION },
   pressures: { type: 'array', items: { type: 'number', minimum: 0, maximum: 1 } }, simulatePressure: { type: 'boolean' }, text: { type: 'string', maxLength: 4000 }, originalText: { type: 'string', maxLength: 4000 },
   fontSize: { type: 'number', exclusiveMinimum: 0 }, lineHeight: { type: 'number', exclusiveMinimum: 0 }, autoResize: { type: 'boolean' }, fontFamily: { enum: [1, 2, 3, 5, 6, 7, 8, 9] },
   textAlign: { enum: ['left', 'center', 'right'] }, verticalAlign: { enum: ['top', 'middle', 'bottom'] }, roundness: { anyOf: [{ type: 'null' }, { type: 'object', properties: { type: { enum: [1, 2, 3] }, value: { type: 'number' } }, required: ['type'], additionalProperties: false }] },

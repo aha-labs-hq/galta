@@ -32,7 +32,11 @@ test('the submitted preview preserves readable pixel density across world scales
         const exact = await tool.execute('canvas_capture', { region: viewport }, scope)
         const block = exact.content.find((part: any) => part.type === 'image')
         const full = await createImageBitmap(await (await fetch(`data:image/jpeg;base64,${block.data}`)).blob())
-        results.push({ zoom, width: canvas.width, height: canvas.height, red, full: [full.width, full.height], region: exact.structuredContent.region })
+        context.clearRect(0, 0, canvas.width, canvas.height); context.drawImage(full, 0, 0)
+        const plain = context.getImageData(0, 0, canvas.width, canvas.height).data
+        let exactRed = 0
+        for (let i = 0; i < plain.length; i += 4) if (plain[i] > 200 && plain[i + 1] < 50 && plain[i + 2] < 50) exactRed++
+        results.push({ zoom, width: canvas.width, height: canvas.height, red, exactRed, full: [full.width, full.height], region: exact.structuredContent.region })
         full.close()
       } finally { task.close() }
     }
@@ -42,7 +46,11 @@ test('the submitted preview preserves readable pixel density across world scales
   const expectedRedArea = 100 * 60 * (1400 / 1200) ** 2
   for (const result of results) {
     expect(result.width).toBe(1400)
-    expect(Math.abs(result.red - expectedRedArea) / expectedRedArea).toBeLessThan(.03)
+    expect(Math.abs(result.exactRed - expectedRedArea) / expectedRedArea).toBeLessThan(.03)
+    // The preview is that same render with the object's number and outline
+    // drawn over it, a fixed raster footprint at every world scale.
+    expect(result.red).toBeLessThanOrEqual(result.exactRed)
+    expect(result.exactRed - result.red).toBeLessThan(700)
     expect(result.full).toEqual([1400, 1050])
     expect(result.region).toMatchObject({ x: 0, y: 0, width: 1200 / result.zoom, height: 900 / result.zoom })
   }

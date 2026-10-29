@@ -43,6 +43,28 @@ After an action, the interface settles. Reducing visible chrome must never
 remove drawing tools, model/session/effort settings, conversation access or
 history navigation. A small visual mark still needs a usable interaction area.
 
+## Paper grain
+
+The canvas paper is printed: `--paper-grain` lays a still, fine grain of ink
+on the canvas field, at `--paper-grain-size`. It lies under the artwork. The
+engine draws the artwork on a transparent scene (`viewBackgroundColor:
+'transparent'` in `ExcalidrawCanvas.tsx` and `HistoryStage.tsx`), and the
+paper and its grain are the engine adapter's background beneath it
+(`excalidraw.css`), so no export, agent preview or Time Machine recording
+carries the grain; each paints its own `--background`. Time Machine's
+dissolving frame wears the same paper (`history.css`).
+galta.art and the disk image's install window print it over their whole page
+instead (`scripts/render-dmg-background.swift`).
+
+It is one tile of noise whose alpha carries its strength, with no blending
+mode and no motion: it is painted with the canvas field, not on every frame,
+and adds no layer of its own. On an Apple M4 Pro Mac (Chrome on the GPU,
+device scale 2), panning boards of 300 and 1000 images through the
+media-capacity harness keeps the same frame times with the grain and without
+it: median 16.7 ms, 95th percentile at most 17.6 ms. `prefers-contrast: more`,
+`prefers-reduced-transparency` and forced colours set it to `none`.
+galta.art wears the same token over its whole page.
+
 ## Glass material
 
 **Glass** is a semantic material in the design system. It simulates the soft,
@@ -315,6 +337,11 @@ nor the canvas field receives a decorative UI shadow.
 
 ## State, motion and layers
 
+- The ink pen uses `motion-ink-pace` (600 screen px/s), `motion-ink-lift`
+  (60 ms) and `motion-ink-catchup` (6 s). Reduced motion sets the catch-up
+  budget to zero. `layer-canvas-decoration` places decoration over the
+  artwork, such as the agent's mark, above the editor's static canvas and
+  below its pointer and selection feedback.
 - Hover: neutral fill, 140 ms. Selected: graphite ink on a neutral field.
 - Segmented choices share one sliding selection surface, with a 140 ms transform
   transition for pointer input. Keyboard input and reduced motion switch immediately.
@@ -449,8 +476,9 @@ engine's own `border-radius` declaration on an HTML embed was dropped until the
 adapter supplied a value. An engine surface that still shows a stock colour or
 corner is an unmapped variable, not a styling preference.
 [`theme.ts`](../../apps/extension/src/design/theme.ts) reads the background
-for Excalidraw initialization and exported agent previews, so the UI and image
-context do not drift. Missing required values fail explicitly.
+for exported agent previews and recordings, which paint the paper's colour
+themselves; the live engine draws on a transparent scene over the paper (see
+Paper grain), so the UI and image context do not drift. Missing required values fail explicitly.
 
 ## Frontend foundation contract
 

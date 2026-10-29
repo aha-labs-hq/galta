@@ -2,7 +2,8 @@ import { test, expect, afterAll } from 'bun:test'
 import { chmod, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import { checksum, codexExecutable, codexExecutables, runtimeFiles, runtimeBundle, runtimeExecutable } from '../native/companion/release.ts'
+import { checksum, runtimeFiles, runtimeBundle, runtimeExecutable } from '../native/companion/release.ts'
+import dependencies from '../distribution/dependencies.json'
 import { inspectRelease } from '../native/companion/health.ts'
 import { assessCompanion } from '../packages/runtime/src/lifecycle.ts'
 import { validateDistribution } from '../scripts/distribution/config.ts'
@@ -18,20 +19,30 @@ const id = 'abcdefghijklmnopabcdefghijklmnop'
 // The trailing no-op keeps sh from exec'ing sleep, so its command line still names the release.
 const occupy = directory => Bun.spawn(['/bin/sh', '-c', 'sleep 60; :', join(directory, 'Resources/galta-canvas-bridge')])
 const roots = home => ({ root: join(home, 'Library/Application Support/Galta'), registry: join(home, 'Library/Application Support/Google/Chrome/NativeMessagingHosts') })
+// A Mac with no Codex of its own: this machine's installations stay out of sight.
+const isolatedEnv = home => { const env = { ...process.env, HOME: home, GALTA_CODEX_CANDIDATES: '' }; delete env.GALTA_CODEX_BIN; return env }
+const fakeCodex = version => `#!/bin/sh\necho codex-cli ${version}\n`
+/** Codex as Mac apps up to 0.1.4 bundled it, recorded in the release. */
+const bundledCodex = version => ({
+  'Resources/codex/bin/codex': fakeCodex(version),
+  'Resources/codex/codex-package.json': JSON.stringify({ layoutVersion: 1, version, target: 'aarch64-apple-darwin', variant: 'codex', entrypoint: 'bin/codex', resourcesDir: 'codex-resources', pathDir: 'codex-path' }),
+})
 async function fixture() {
   const home = await realpath(await mkdtemp(join(tmpdir(), "galta lifecycle '")))
   const release = async (build = 1, options = {}) => {
     const directory = join(home, `payload-${build}`), files = {}
-    for (const name of runtimeFiles) {
+    const extra = options.bundledCodex ? bundledCodex(options.bundledCodex) : {}
+    for (const name of [...runtimeFiles, ...Object.keys(extra)]) {
       await mkdir(dirname(join(directory, name)), { recursive: true })
-      const bytes = name === 'MacOS/galta-lock' ? await readFile(lockBinary) : Buffer.from(name === codexExecutable ? `#!/bin/sh\n${options.broken ? 'exit 1' : 'echo codex-cli 0.154.0'}\n` : `#!/bin/sh\necho release-${build}\n`)
-      await writeFile(join(directory, name), bytes, { mode: 0o755 }); files[name] = checksum(bytes)
+      const bytes = name === 'MacOS/galta-lock' ? await readFile(lockBinary) : Buffer.from(extra[name] ?? `#!/bin/sh\necho release-${build}\n`)
+      // A broken release has a runtime executable that cannot run.
+      await writeFile(join(directory, name), bytes, { mode: options.broken && name === 'Resources/galta-companion' ? 0o644 : 0o755 }); files[name] = checksum(bytes)
     }
     await writeFile(join(directory, 'Resources/release.json'), JSON.stringify({ schema: 1, protocol: 1, version: '0.1.0', build, channel: 'development', extensionId: id, files }))
     return directory
   }
   const command = async (role, directory) => {
-    const child = Bun.spawn([process.execPath, 'native/companion/main.ts', role, directory], { cwd: project, env: { ...process.env, HOME: home }, stdout: 'pipe', stderr: 'pipe' })
+    const child = Bun.spawn([process.execPath, 'native/companion/main.ts', role, directory], { cwd: project, env: isolatedEnv(home), stdout: 'pipe', stderr: 'pipe' })
     const [code, output, error] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
     return { code, output, error }
   }
@@ -42,7 +53,7 @@ async function fixture() {
   }
   /** One browser request to the companion host started from `directory`, as its launcher would. */
   const host = async (directory, request) => {
-    const child = Bun.spawn([process.execPath, 'native/companion/main.ts', 'companion', `chrome-extension://${id}/`], { cwd: project, env: { ...process.env, HOME: home, GALTA_RELEASE_DIRECTORY: directory }, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' })
+    const child = Bun.spawn([process.execPath, 'native/companion/main.ts', 'companion', `chrome-extension://${id}/`], { cwd: project, env: { ...isolatedEnv(home), GALTA_RELEASE_DIRECTORY: directory }, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' })
     const body = Buffer.from(JSON.stringify(request)), header = Buffer.alloc(4)
     header.writeUInt32LE(body.length)
     child.stdin.write(Buffer.concat([header, body])); child.stdin.end()
@@ -60,7 +71,7 @@ test('runtime commands report a failure as one readable line', async () => {
     const result = await f.command('inspect', missing)
     expect(result.code).toBe(1)
     expect(result.error).toBe(`ENOENT: no such file or directory, open '${join(missing, 'Resources/release.json')}'\n`)
-    expect((await f.command('unknown', missing)).error).toBe('Expected canvas, codex, mcp, companion, install or inspect\n')
+    expect((await f.command('unknown', missing)).error).toBe('Expected canvas, codex, mcp, companion, install, inspect or codex-download\n')
   } finally { await f.close() }
 })
 
@@ -72,7 +83,8 @@ test.skipIf(process.platform !== 'darwin')('the companion host answers every req
     const pinned = await realpath(join(f.root, 'current'))
     const healthy = await f.host(pinned, { method: 'status' })
     expect(healthy.code).toBe(0)
-    expect(assessCompanion(healthy.reply)).toMatchObject({ state: 'ready', health: { mcpCommand: join(f.root, 'current/Resources/galta-mcp') } })
+    // Canvas access is ready without Codex; Chat offers the pinned download.
+    expect(assessCompanion(healthy.reply)).toMatchObject({ state: 'ready', health: { mcpCommand: join(f.root, 'current/Resources/galta-mcp'), codex: { state: 'missing', download: { version: dependencies.codex.version, bytes: dependencies.codex.bytes } } } })
     expect((await f.host(pinned, { method: 'media/settings', params: { action: 'status' } })).reply).toMatchObject({ ok: true })
     expect((await f.host(pinned, { method: 'future' })).reply).toEqual({ error: 'Update Galta for Mac to use this.' })
 
@@ -114,7 +126,7 @@ test.skipIf(process.platform !== 'darwin')('app inspection reads the actual inst
     expect(damaged.mcpCommand).toBeUndefined()
     expect((await f.install(first)).code).toBe(0)
     expect((await f.inspect(first)).installation.state).toBe('current')
-    await chmod(join(current, codexExecutable), 0o644)
+    await chmod(join(current, 'Resources/galta-mcp'), 0o644)
     expect((await f.inspect(first)).installation.state).toBe('repair-required')
     // A new healthy payload can still replace a damaged older runtime.
     expect((await f.inspect(second)).installation.state).toBe('update-available')
@@ -127,7 +139,7 @@ test.skipIf(process.platform !== 'darwin')('app inspection reads the actual inst
   } finally { await f.close() }
 })
 
-test.skipIf(process.platform !== 'darwin')('app inspection distinguishes interrupted activation, conflicting identity and a broken bundled runtime', async () => {
+test.skipIf(process.platform !== 'darwin')('app inspection distinguishes interrupted activation, conflicting identity and a broken runtime', async () => {
   const f = await fixture()
   try {
     const first = await f.release(1)
@@ -150,6 +162,11 @@ test('compatibility requires a complete contract and a working runtime', () => {
   expect(assessCompanion(healthy).state).toBe('ready')
   expect(assessCompanion({ ...healthy, mcpCommand: '/Applications/Galta.app/Contents/Resources/galta-mcp' }).state).toBe('ready')
   for (const invalid of [null, {}, { ...healthy, protocol: 2 }, { ...healthy, capabilities: ['canvas/1'] }, { ...healthy, runtime: {} }, { ...healthy, mcpCommand: 42 }, { ...healthy, mcpCommand: 'relative/path' }, { ...healthy, mcpCommand: '/tmp/bad\npath' }]) expect(assessCompanion(invalid).state).toBe('incompatible')
+  // Codex availability is optional (apps that bundled Codex report none). One
+  // this extension cannot read concerns Chat only: the Mac app stays ready.
+  const download = { version: '0.162.0-alpha.17.2', bytes: 132097637 }
+  for (const codex of [{ state: 'ready', version: '0.165.0', source: 'yours' }, { state: 'missing', download }, { state: 'outdated', version: '0.150.0', source: 'galta', minimum: download.version, download }, { state: 'downloading', received: 0, download }, { state: 'failed', error: 'Try again.', download }]) expect(assessCompanion({ ...healthy, codex })).toEqual({ state: 'ready', health: { ...healthy, codex } })
+  for (const codex of [null, {}, { state: 'updating', download }, { state: 'ready', version: '0.165.0', source: 'elsewhere' }, { state: 'missing' }, { state: 'outdated', version: '0.150.0', minimum: download.version, download }, { state: 'downloading', download }, { state: 'failed', error: 'x'.repeat(401), download }]) expect(assessCompanion({ ...healthy, codex })).toEqual({ state: 'ready', health: { ...healthy, codex: { state: 'unrecognized' } } })
   expect(assessCompanion({ ...healthy, runtime: { available: false } }).state).toBe('runtime-unavailable')
   expect(assessCompanion({ error: 'Galta for Mac was just updated. Try again.' })).toEqual({ state: 'unavailable', detail: 'Galta for Mac was just updated. Try again.' })
   for (const invalid of [{ error: '' }, { error: 42 }, { error: 'x'.repeat(401) }, { ...healthy, error: 'ignored' }]) expect(assessCompanion(invalid).state).not.toBe('unavailable')
@@ -168,7 +185,7 @@ test.skipIf(process.platform !== 'darwin')('activation verifies dependencies bef
     expect((await f.install(await f.release(2, { broken: true }))).code).not.toBe(0)
     expect(await realpath(join(f.root, 'current'))).toBe(pinned)
     const second = await f.release(3)
-    await writeFile(join(second, codexExecutable), '#!/bin/sh\necho changed\n')
+    await writeFile(join(second, 'Resources/galta-mcp'), '#!/bin/sh\necho changed\n')
     expect((await f.install(second)).code).not.toBe(0)
     expect(await realpath(join(f.root, 'current'))).toBe(pinned)
     // A session started before the update keeps running from its release.
@@ -186,12 +203,12 @@ test.skipIf(process.platform !== 'darwin')('activation verifies dependencies bef
   } finally { await f.close() }
 })
 
-test.skipIf(process.platform !== 'darwin')('missing or non-executable code-mode host fails readiness and cannot replace a working installation', async () => {
+test.skipIf(process.platform !== 'darwin')('a missing or non-executable runtime executable fails readiness and cannot replace a working installation', async () => {
   const f = await fixture()
   try {
     expect((await f.install(await f.release(1))).code).toBe(0)
     const pinned = await realpath(join(f.root, 'current'))
-    const host = codexExecutables.find(file => file.endsWith('/codex-code-mode-host'))
+    const host = 'Resources/galta-codex-bridge'
     for (const [index, damage] of [
       async directory => { const path = join(directory, 'Resources/release.json'), manifest = JSON.parse(await readFile(path, 'utf8')); delete manifest.files[host]; await writeFile(path, JSON.stringify(manifest)) },
       directory => rm(join(directory, host)),
@@ -206,22 +223,32 @@ test.skipIf(process.platform !== 'darwin')('missing or non-executable code-mode 
   } finally { await f.close() }
 })
 
-test.skipIf(process.platform !== 'darwin')('an installation with the previous standalone Codex layout can upgrade to the complete package', async () => {
+test.skipIf(process.platform !== 'darwin')('an update from an app that bundled Codex keeps that Codex when the user has none', async () => {
   const f = await fixture()
   try {
-    expect((await f.install(await f.release(1))).code).toBe(0)
-    const old = await realpath(join(f.root, 'current')), path = join(old, 'Resources/release.json')
-    const manifest = JSON.parse(await readFile(path, 'utf8'))
-    const binary = await readFile(join(old, codexExecutable))
-    await writeFile(join(old, 'MacOS/codex'), binary, { mode: 0o755 })
-    for (const file of Object.keys(manifest.files)) if (file.startsWith('Resources/codex/')) delete manifest.files[file]
-    manifest.files['MacOS/codex'] = checksum(binary)
-    await writeFile(path, JSON.stringify(manifest))
-    await rm(join(old, 'Resources/codex'), { recursive: true })
-    expect((await inspectRelease(old)).runtime.available).toBe(false)
+    const pinned = dependencies.codex.version
+    expect((await f.install(await f.release(1, { bundledCodex: pinned }))).code).toBe(0)
+    const old = await realpath(join(f.root, 'current'))
     const next = await f.install(await f.release(2))
     expect(next.code, next.error).toBe(0)
-    expect((await inspectRelease(await realpath(join(f.root, 'current')))).runtime.available).toBe(true)
+    expect(JSON.parse(next.output)).toMatchObject({ adoptedCodex: pinned, codex: { state: 'ready', version: pinned, source: 'galta' }, removedReleases: [basename(old)] })
+    // Verified against the old release's digests, then the old release is gone.
+    expect(await readFile(join(f.root, 'codex', pinned, 'bin/codex'), 'utf8')).toBe(fakeCodex(pinned))
+    expect((await readdir(join(f.root, 'codex'))).filter(name => name.startsWith('.'))).toEqual([])
+    expect((await f.inspect(await f.release(2))).codex).toEqual({ state: 'ready', version: pinned, source: 'galta' })
+  } finally { await f.close() }
+})
+
+test.skipIf(process.platform !== 'darwin')('a bundled Codex older than Galta supports is not kept, and an update needs no Codex', async () => {
+  const f = await fixture()
+  try {
+    expect((await f.install(await f.release(1, { bundledCodex: '0.154.0' }))).code).toBe(0)
+    const next = await f.install(await f.release(2))
+    expect(next.code, next.error).toBe(0)
+    const result = JSON.parse(next.output)
+    expect(result.adoptedCodex).toBeUndefined()
+    expect(result.codex).toMatchObject({ state: 'missing' })
+    expect(await Bun.file(join(f.root, 'codex', '0.154.0', 'bin/codex')).exists()).toBe(false)
   } finally { await f.close() }
 })
 
@@ -322,7 +349,7 @@ test.skipIf(process.platform !== 'darwin')('repair installs a missing or damaged
     const restored = await f.install(app)
     expect(restored.code, restored.error).toBe(0)
     expect((await f.inspect(app)).installation.state).toBe('current')
-    await chmod(join(pinned, codexExecutable), 0o644)
+    await chmod(join(pinned, 'Resources/galta-mcp'), 0o644)
     expect((await f.inspect(app)).installation).toMatchObject({ state: 'repair-required', detail: expect.stringContaining('damaged') })
     const repaired = await f.install(app)
     expect(repaired.code, repaired.error).toBe(0)

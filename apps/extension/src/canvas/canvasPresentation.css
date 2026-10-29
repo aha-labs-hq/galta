@@ -1,2 +1,0 @@
-/* After native static ink (1), below native selection and pointer feedback (2). */
-.canvas-presentation { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; }

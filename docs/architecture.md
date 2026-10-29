@@ -303,8 +303,11 @@ Its keyed CanvasSession is permanently bound to one projectId and coordinates
 writes. It hydrates the saved head once before attaching
 document listeners. Startup copies and warms native brush caches in cooperative
 slices; editing and submission become available only after the complete restore.
-Programmatic zoom reuses native bitmaps during the gesture, then prepares visible
-brushes in slices before returning to exact-resolution rendering. Cancellation
+The editor draws its static scene from world tiles, never one bitmap per
+element ([patch](../patches/README.md#tiled-static-scene)), so a canvas of
+thousands of strokes renders in bounded memory. Programmatic zoom shows the
+tiles of the previous scale during the gesture, then prepares visible brush
+outlines in slices before returning to exact-resolution tiles. Cancellation
 and canvas disposal retire pending preparation without editing artwork. Every artwork write runs an updater against the latest workspace
 inside one IndexedDB readwrite transaction. The live editor owns a mutable
 cursor position; queued user edits advance that position, while navigation and
@@ -333,14 +336,28 @@ document changes. A saved camera is restored only for the matching head.
 of timestamps and artwork commit IDs.
 
 The storage repository shares identical image file records, HTML documents,
-point arrays and pressure arrays between snapshots through `shareWorkspaceAssets`.
-Since version 5, `workspaces` contains the project, conversations and an immutable
-snapshot-address manifest; `canvas-snapshots` contains element metadata and
-asset references; `canvas-assets` contains the exact shared payloads. Addresses
-are opaque storage IDs, not content hashes or another revision scheme. A save
-writes only newly referenced snapshots and assets, then updates the manifest
-and catalog atomically. Removed/replaced references collect their unreferenced
-records and derived previews in that same transaction.
+point arrays and pressure arrays between snapshots through `shareWorkspaceAssets`;
+each version is shared once, when first written, against the version it came
+from. Since version 5, `workspaces` contains the project, conversations and an
+immutable snapshot-address manifest; `canvas-snapshots` contains element
+metadata and asset references; `canvas-assets` contains the exact shared
+payloads. Addresses are opaque storage IDs, not content hashes or another
+revision scheme.
+
+Storage format 2 (2026-10-28) stores a version as its change from its parent's
+stored version: the elements whose version or content changed, the IDs it
+removed, where changed elements now stand when the order moved, and its files
+only when they changed. A commit therefore writes what changed, not the whole
+canvas. A version is stored complete when a change touches more than half its
+elements or would extend a chain of 64. Each record lists its own assets; the
+manifest no longer lists every asset. A save writes only new records and
+assets, then updates the manifest and catalog atomically. A record stays while
+any kept version is built on it, even after its own version is cut; records and
+assets nothing kept still uses are collected, with derived previews, in that
+same transaction. Reading rebuilds each version over its base, so an unchanged
+element is one object across versions in memory as on disk. Format 1 manifests
+and complete records stay readable and become bases for new changes; a build
+from before format 2 refuses a format 2 manifest rather than misreading it.
 
 Storage version 6 converts old image Data URLs to Blobs atomically. Images and
 videos share this binary file boundary; playback state stays out of the document.
@@ -349,7 +366,11 @@ See [Canvas media](design/video.md) for rendering and resource ownership.
 Different pixels or file metadata remain separate. HTML documents are shared
 per element ID and complete content; geometry is shared per element ID and
 exact array contents, including signed zero. Restoring clones the mutable editor
-document. The repository caches only its last workspace's immutable records;
+document. Captures are read-only: `CanvasScene.snapshot` returns, for every
+element whose version is unchanged, the copy history already holds
+(`saveCanvasSnapshot`), and a new version reuses its parent's object for every
+equal element (`saveCanvasVersion`), so an unchanged canvas compares by
+identity. Development builds freeze these copies; clone a capture to edit it. The repository caches only its last workspace's immutable records;
 every transaction rereads the authoritative manifest, loads missing records,
 and prunes the cache. Aborted transactions never publish their cache. Old
 embedded-history databases upgrade atomically; failed writes roll back the
@@ -954,7 +975,8 @@ See [browser verification](agents/codex.md#browser-verification).
 
 Codex owns its sign-in; provider keys for generation belong to Galta's media
 store and are entered only in Settings. Browser-only subscription OAuth is not implemented;
-the native host and official Codex installation remain prerequisites. Login
+the native host and an official Codex (the user's own, or the pinned one Galta
+downloads when asked) remain prerequisites for built-in chat. Login
 opens one centered official authorization popup and matches its completion by
 login ID. See [the connection contract](agents/codex.md).
 

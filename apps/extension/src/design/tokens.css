@@ -2,6 +2,11 @@
    not this theme. Tailwind, shadcn and imperative canvas exports consume these. */
 :root, :host {
   --background: #f7f7f7;
+  /* The canvas paper is printed: a still, fine grain of ink lies on it, under the artwork and never
+     in an export or an agent's preview. One tile of noise whose alpha carries its strength; no
+     blending and no motion, so it is painted once, not every frame. galta.art wears the same. */
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .144 0 0 0 -.0558'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  --paper-grain-size: 220px;
   --foreground: #252525;
   --surface: #ffffff;
   --surface-glass: color-mix(in srgb, var(--surface) 94%, transparent);
@@ -165,6 +170,9 @@
   --object-label-dot: 5px;
   --object-label-min-width: 160px;
   /* Above Excalidraw's scene controls; menus share one portalled layer. */
+  /* Decoration over the artwork: above the editor's static canvas (1), below
+     its pointer and selection feedback (2). */
+  --layer-canvas-decoration: 1;
   --layer-history: 1200;
   --layer-tools: 1300;
   --layer-context: 1400;
@@ -235,6 +243,12 @@
   --motion-history-move: 240ms;
   --motion-history-follow: 420ms;
   --motion-history-travel: 360ms;
+  /* The ink pen draws a new stroke at `pace` screen pixels per second and lifts
+     for `lift` between strokes, speeding up only as far as it must for the ink
+     never to trail the document by more than `catchup`. */
+  --motion-ink-pace: 600;
+  --motion-ink-lift: 60ms;
+  --motion-ink-catchup: 6s;
   --ease-out: cubic-bezier(.2,.8,.2,1);
   --ease-sheet: cubic-bezier(.32,.72,0,1);
   --ease-settle: cubic-bezier(.4,0,.2,1);
@@ -288,10 +302,12 @@
     --glass-hover: var(--surface-hover);
     --selection-edge: var(--border-strong);
     --selection-shadow: none;
+    --paper-grain: none;
   }
 }
 @media (forced-colors: active) {
   :root, :host {
+    --paper-grain: none;
     --graphite-base: Canvas;
     --graphite-foreground: CanvasText;
     --graphite-muted: CanvasText;
@@ -324,7 +340,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  :root, :host { --motion-fast: 0ms; --motion-panel: 0ms; --motion-scroll: 0ms; --motion-sheet: 0ms; --motion-sheet-exit: 0ms; --motion-disclosure: 0ms; --motion-disclosure-exit: 0ms; --motion-follow: 0ms; --motion-history-snap: 0ms; --motion-history-glide: 0ms; --motion-history-dissolve: 0ms; --motion-history-move: 0ms; --motion-history-follow: 0ms; --motion-history-travel: 0ms; }
+  :root, :host { --motion-fast: 0ms; --motion-panel: 0ms; --motion-scroll: 0ms; --motion-sheet: 0ms; --motion-sheet-exit: 0ms; --motion-disclosure: 0ms; --motion-disclosure-exit: 0ms; --motion-follow: 0ms; --motion-history-snap: 0ms; --motion-history-glide: 0ms; --motion-history-dissolve: 0ms; --motion-history-move: 0ms; --motion-history-follow: 0ms; --motion-history-travel: 0ms; --motion-ink-catchup: 0ms; }
 }
 
 /* One material recipe; floating primitives provide their own geometry. */

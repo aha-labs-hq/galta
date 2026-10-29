@@ -75,7 +75,7 @@ test('native drawing and keyboard undo remain owned by Excalidraw', async ({ pag
     c.width = bitmap.width; c.height = bitmap.height
     const ctx = c.getContext('2d')!; ctx.drawImage(bitmap, 0, 0); bitmap.close()
     return { color: [...ctx.getImageData(1, 1, 1, 1).data].slice(0, 3), unchanged: JSON.stringify(s.snapshot().document) === before,
-      background: s.api.getAppState().viewBackgroundColor }
+      background: getComputedStyle(document.documentElement).getPropertyValue('--background').trim() }
   })
   const expected = preview.background.match(/[a-f\d]{2}/gi)!.map((v: string) => parseInt(v, 16))
   preview.color.forEach((channel: number, i: number) => expect(Math.abs(channel - expected[i]!)).toBeLessThanOrEqual(2))

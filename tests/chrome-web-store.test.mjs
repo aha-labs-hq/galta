@@ -49,6 +49,12 @@ test('a refused or failed upload stops with the store\'s reason', async () => {
   await expect(fakeStore([[200, { uploadState: 'FAILED' }]]).store.upload(new Uint8Array([1]))).rejects.toThrow('did not accept the package: FAILED')
 })
 
+test('cancelling withdraws the active submission', async () => {
+  const { calls, store } = fakeStore([[200, {}]])
+  await store.cancel()
+  expect(calls[0]).toMatchObject({ url: `https://chromewebstore.googleapis.com/v2/${item}:cancelSubmission`, method: 'POST' })
+})
+
 test('submission asks for staging, and release publishes what was staged', async () => {
   const { calls, store } = fakeStore([[200, { state: 'PENDING_REVIEW' }], [200, { state: 'PUBLISHED' }]])
   expect(await store.submit()).toBe('PENDING_REVIEW')

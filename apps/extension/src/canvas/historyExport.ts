@@ -14,8 +14,9 @@ const pause = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, r
 
 /**
  * Record a range of moments as a video of the canvas changing: what the stage
- * shows, under the camera the user chose, at an even step, with the first and
- * last moments held. Frames are composed from the stage every animation frame,
+ * shows, under the camera the user chose, at an even step that waits for a
+ * moment's ink to be drawn, with the first and last moments held. Frames are
+ * composed from the stage every animation frame,
  * so its transitions are in the video too.
  */
 export async function recordHistory({ stage, moments, show, step, signal }: {
@@ -54,7 +55,7 @@ export async function recordHistory({ stage, moments, show, step, signal }: {
     recorder.start(250)
     try {
       await pause(step * 3, recording)
-      for (const id of moments.slice(1)) { show(id); await pause(step, recording) }
+      for (const id of moments.slice(1)) { show(id); await pause(step, recording); await stage()?.drawn(recording) }
       await pause(step * 5, recording)
     } finally { if (recorder.state !== 'inactive') recorder.stop(); await stopped }
   } finally {
