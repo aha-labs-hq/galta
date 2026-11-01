@@ -1,22 +1,63 @@
 # Galta
 
-Galta is an AI infinite canvas that opens beside the web page you are browsing. Drag
-references in, draw, point at what you mean, and ask. An agent reads the whole
-canvas and the page you bound to it, then works on the canvas through Galta's
-MCP tools.
+**Point at what you mean. Work with an agent on the same canvas.**
 
-![Sorting references on a Galta canvas](distribution/store/1-sort.jpg)
+Galta is a local-first AI canvas beside the web page you're browsing. Collect
+references, sketch an idea, then ask Codex or Claude Code to work with what
+you can both see. The result lands on your canvas.
 
-- **Local first.** Each canvas is a project stored in your browser on your Mac.
-  Drawing, importing and history work with no network and no agent.
-- **Your own AI.** Chat in Galta with your ChatGPT account through the bundled
-  Codex runtime, or work in Codex or Claude Code and watch the changes land on
-  your canvas. Image, video and speech generation use your own BytePlus,
-  OpenRouter, fal or Higgsfield account; the provider bills you directly and
-  the key stays on your Mac.
-- **Get it** at [galta.art](https://galta.art).
+[Get Galta](https://galta.art/download/?utm_source=github&utm_medium=readme&utm_campaign=public-launch) ·
+[Explore the canvas](https://galta.art/en/?utm_source=github&utm_medium=readme&utm_campaign=public-launch#capture) ·
+[中文](README.zh-CN.md)
 
-## Why the source is public
+[![Galta walkthrough: a request turns scattered visual references into groups on the same canvas](distribution/store/readme-sort.gif)](https://galta.art/en/?utm_source=github&utm_medium=readme&utm_campaign=public-launch#capture)
+
+*An eight-second interface walkthrough. Agent steps are re-enacted for the
+demo; this is not a recording of live model reasoning.
+[View the still](distribution/store/1-sort.jpg).*
+
+## From references to something you can work on
+
+- **Collect without losing the source.** Bring images and references from the
+  page into the canvas, alongside your notes and drawings.
+- **Point instead of explaining everything again.** Select an object or
+  draw around a detail and ask for a change. The whole canvas remains context;
+  your selection tells the agent where you're pointing.
+- **Keep the work together.** Arrange a moodboard, explore a sketch, or make
+  images, video and interactive HTML beside the material that informed them.
+- **Return to an earlier idea.** Canvas history lets you revisit a previous
+  state and continue from there.
+
+For example, collect a few lamp references and ask: “Group these by shape,
+material and light.” Then point at a sketch and ask: “Use this curve, keeping
+the proportions of the lamp on the left.”
+
+## Try it
+
+1. [Install the browser extension and Mac app](https://galta.art/download/?utm_source=github&utm_medium=readme&utm_campaign=public-launch).
+   The download page lists the current beta and device requirements.
+2. Open Galta beside a page and bring in a few references. Drawing, importing
+   and canvas history work without an agent or network connection.
+3. Connect an agent in Settings. Chat in Galta with your ChatGPT account,
+   or chat in Codex or Claude Code and watch the changes arrive on the canvas.
+
+The native agent connection currently needs macOS. Image, video and speech
+generation are optional and use your own connected provider account, billed
+by that provider. An agent subscription does not include generation credits.
+
+**Local storage, clear boundaries.** Canvases stay in your browser on your
+Mac. When you ask a connected agent or generation provider to work, relevant
+context is sent to that service; local storage does not mean local inference.
+[Privacy](https://galta.art/privacy/) · [Help](https://galta.art/help/)
+
+## Feedback and source
+
+Trying it on a real project is the most useful way to help. If something gets
+in the way, [open an issue](https://github.com/aha-labs-hq/galta/issues): say what
+you wanted to make, what happened and which version you used. Share only
+material you're comfortable making public. A star helps others discover Galta.
+
+### Why the source is public
 
 Galta is a browser extension that can capture and read the pages you bind to
 a canvas, plus a Mac app that runs an agent on your machine. That is a lot of
@@ -28,7 +69,7 @@ per release. Its first commit is the development source of 2026-10-27, after
 0.1.3 (build 30); from the next release on, each commit is the source that
 release was built from.
 
-## Contributing
+### Contributing
 
 Issues are welcome from everyone. Pull requests are accepted from members of
 the Aha Labs organization; a bot closes others. See [CONTRIBUTING.md](CONTRIBUTING.md), and report security problems privately as

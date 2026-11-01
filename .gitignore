@@ -35,6 +35,7 @@ distribution/*.local.json
 # Binaries and media this repository does not publish
 *.jpeg
 *.gif
+!distribution/store/readme-sort.gif
 *.mov
 *.wav
 *.mp3
