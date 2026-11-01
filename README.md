@@ -64,10 +64,11 @@ a canvas, plus a Mac app that runs an agent on your machine. That is a lot of
 trust to ask for. The code is here so you can check what it does against what
 it promises in the [product contract](docs/blueprint.md).
 
-This repository is published from Galta's development repository, one commit
-per release. Its first commit is the development source of 2026-10-27, after
-0.1.3 (build 30); from the next release on, each commit is the source that
-release was built from.
+Application source is published from Galta's development repository as release
+snapshots. Documentation and presentation can be updated between releases.
+The first snapshot is the development source of 2026-10-27, after 0.1.3
+(build 30); later release snapshots contain the source those releases were
+built from.
 
 ### Contributing
 

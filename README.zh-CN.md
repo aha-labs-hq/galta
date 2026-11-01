@@ -47,7 +47,7 @@ Galta 是打开在网页旁边的 AI 无限画布。把参考拖进来，画两�
 [告诉我们](https://github.com/aha-labs-hq/galta/issues)：你想做什么、实际发生了什么，以及使用的版本。
 只分享你愿意公开的材料。如果这个方向对你有用，也欢迎 Star。
 
-源码采用 [AGPL-3.0-only](LICENSE)，按发行版本从开发仓库发布。
+源码采用 [AGPL-3.0-only](LICENSE)，按发行版本从开发仓库发布；介绍和文档可以在两个版本之间更新。
 Issue 向所有人开放，代码 PR 目前仅接受 Aha Labs 组织成员提交；
 完整规则见 [贡献说明](CONTRIBUTING.md)。漏洞请按 [安全政策](SECURITY.md) 私下报告。
 
