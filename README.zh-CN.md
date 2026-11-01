@@ -5,7 +5,7 @@
 Galta 是打开在网页旁边的 AI 无限画布。把参考拖进来，画两笔，指出你想改的地方，
 再让 Codex 或 Claude Code 接着做。参考、想法和结果都留在同一张画布上。
 
-[安装 Galta](https://galta.art/download/?utm_source=github&utm_medium=readme&utm_campaign=public-launch) ·
+[安装 Galta](https://galta.art/zh-hans/download/?utm_source=github&utm_medium=readme&utm_campaign=public-launch) ·
 [看看怎么用](https://galta.art/zh-hans/?utm_source=github&utm_medium=readme&utm_campaign=public-launch#capture) ·
 [English](README.md)
 
@@ -28,7 +28,7 @@ Galta 是打开在网页旁边的 AI 无限画布。把参考拖进来，画两�
 
 ## 开始使用
 
-1. [安装浏览器扩展和 Mac 应用](https://galta.art/download/?utm_source=github&utm_medium=readme&utm_campaign=public-launch)。
+1. [安装浏览器扩展和 Mac 应用](https://galta.art/zh-hans/download/?utm_source=github&utm_medium=readme&utm_campaign=public-launch)。
    当前测试版、设备和系统要求以下载页为准。
 2. 在网页旁打开 Galta，拖入几张参考。绘画、导入和画布历史无需联网，也无需接入 Agent。
 3. 在设置里连接 Agent。可以用自己的 ChatGPT 账号在 Galta 内聊天，
