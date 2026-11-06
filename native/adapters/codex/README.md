@@ -2,7 +2,7 @@
 
 The browser extension cannot launch a local process or access a Codex login by itself. This tiny native host is the one-time local bridge that lets Galta use the user's existing Codex subscription without an API key.
 
-The bridge starts `codex app-server --stdio` and translates Chrome native-messaging framing to Codex's JSONL protocol. Each direction owns its UTF-8 decoder; a partial model response cannot affect an incoming browser frame. It does not read ChatGPT cookies, persist OAuth tokens, or send canvas data to a Galta server. Codex owns login, token refresh, model availability, and rate-limit accounting in the user's existing `~/.codex` installation.
+The bridge starts `codex app-server --stdio` and translates Chrome native-messaging framing to Codex's JSONL protocol. Each direction owns its UTF-8 decoder; a partial model response cannot affect an incoming browser frame. It does not read ChatGPT cookies, persist OAuth tokens, or send canvas data to a Galta server. Codex owns login, token refresh, model availability, and rate-limit accounting in Galta’s private `<data root>/runtime/codex` directory.
 
 The host configures one required `galta` MCP server using the installed
 `galta-mcp` executable with no arguments. Canvas and webpage operations both use
@@ -42,10 +42,9 @@ completion, even without computer-use tool calls. The host defaults to
 `approval_policy="never"`, `sandbox_mode="danger-full-access"`, and
 `apps._default.default_tools_approval_mode="approve"`, consistent with Galta's
 user-authorized execution policy. It also sets `features.memories=false` and
-`memories.generate_memories=false`: Codex memory is one store per `CODEX_HOME`,
-shared with the user's coding sessions, so Galta conversations neither load it
+`memories.generate_memories=false`: Galta conversations neither load memory
 nor run its consolidation pipeline, and Galta threads are recorded as excluded
-from memory mining. The connection checks these effective values alongside the
+from memory mining. Its private home keeps coding memory separate. The connection checks these effective values alongside the
 MCP configuration. Global configuration, plugin hooks, explicit app/MCP
 tool policies, authentication and macOS privacy permissions are not rewritten.
 See [execution policy](../../../docs/agents/codex.md) for the boundaries.
@@ -88,7 +87,7 @@ pinned version from ChatGPT for Mac, Codex for Mac, `~/.local/bin`, Homebrew,
 downloaded into its data directory
 ([distribution](../../../docs/distribution.md#codex-for-chat-in-galta)). With
 none, it answers every request with the step that sets Codex up. After installation,
-reload the extension, choose **Connect an agent**, and open **Use built-in chat** in Connection details. An existing local Codex sign-in should
+reload the extension, choose **Connect an agent**, and open **Use built-in chat** in Connection details. Sign in with ChatGPT inside Galta. A Galta chat sign-in should
 be recognized without another authorization tab. A ChatGPT browser session alone
 does not authenticate the local Codex process. Authentication failures ask Codex
 to refresh once; a missing account or an unrecoverable credential needs the
@@ -151,3 +150,5 @@ Its real production image receipt is separate from native Codex image-tool
 availability; the bridge continues to transport the actual generated file.
 
 The production installer should provision the bridge with a signed, platform-specific binary and the published extension ID. Chrome requires the exact extension ID in `allowed_origins`; a host cannot be shared by an arbitrary extension.
+
+The launcher isolates Codex state and SQLite from the desktop app and strips inherited desktop connection and provider-auth environment variables. See [private chat state](../../../docs/agents/codex.md#private-chat-state) for authentication, upgrade behavior and the legacy-history release boundary.

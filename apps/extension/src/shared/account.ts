@@ -1,7 +1,8 @@
 /** The person's Aha Labs account, one account across Aha Labs apps. The
  * service is aha-labs-hq/account; its README is the contract these values
  * copy. The background (`background/account.ts`) owns the session and alone
- * uses the token; pages ask it through `{ type: 'account' }` messages. */
+ * uses the token; pages ask it through `{ type: 'account' }` messages. The host
+ * can exchange it for one audio-bound speech capability without exposing it. */
 
 export const ACCOUNT_ORIGIN = 'https://account.ahalabs.site'
 export const ACCOUNT_API = '/api/auth'

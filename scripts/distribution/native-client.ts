@@ -25,7 +25,7 @@ export class NativeClient {
         const part = JSON.parse(buffer.subarray(4, 4 + length).toString())
         buffer = buffer.subarray(4 + length)
         const value = this.decoder.push(part) as { id?: string; method?: string; result?: unknown; error?: { message: string } } | undefined
-        if (value?.method && value.id === undefined) this.onNotification?.(value)
+        if (value?.method) { this.onNotification?.(value); continue }
         if (!value?.id) continue
         const call = this.pending.get(String(value.id))
         this.pending.delete(String(value.id))
@@ -35,6 +35,7 @@ export class NativeClient {
     }
     if (this.pending.size) throw new Error(`Native host exited before replying: ${(await this.errors).slice(-1000)}`)
   }
+  respond(id: string | number, result?: unknown, error?: unknown) { this.send({ id, ...(error ? { error } : { result }) }) }
   notify(method: string, params?: unknown) { this.send({ method, params }) }
   private send(value: unknown) {
     const bytes = Buffer.from(JSON.stringify(value)), frame = Buffer.alloc(bytes.length + 4)
@@ -51,5 +52,12 @@ export class NativeClient {
       })
     } finally { clearTimeout(timeout) }
   }
-  async close() { this.child.stdin.end(); this.child.kill(); await this.child.exited; await this.reading }
+  async close() {
+    // EOF lets the relay reap its own app-server. Killing the relay first can
+    // orphan that child and keep the diagnostic's stderr pipe open forever.
+    this.child.stdin.end()
+    const deadline = setTimeout(() => this.child.kill('SIGKILL'), 4_000)
+    try { await this.child.exited; await this.reading }
+    finally { clearTimeout(deadline) }
+  }
 }

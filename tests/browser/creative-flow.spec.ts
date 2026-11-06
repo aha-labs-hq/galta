@@ -233,5 +233,5 @@ test('text drafts survive the upgrade that drops retained reference images', asy
     const result = { version: db.version, stores: [...db.objectStoreNames], journal: Object.keys(localStorage).filter(key => key.startsWith('galta-message-draft-pending:')) }
     db.close(); return result
   })
-  expect(upgraded).toEqual({ version: 2, stores: ['messages'], journal: [] })
+  expect(upgraded).toEqual({ version: 4, stores: ['messages', 'recording-history', 'recordings'], journal: [] })
 })

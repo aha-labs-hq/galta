@@ -1,3 +1,4 @@
+import { isWebApp } from '../shared/hostRuntime'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { type WorkspaceBundle, type WorkspaceSummary } from '@galta/storage'
 import { readPortableWorkspace } from './portableMedia'
@@ -33,6 +34,7 @@ export function CanvasWorkspace({ Session }: { Session: ComponentType<CanvasSess
   useEffect(() => {
     let active = true
     const stop = codexConnection.start()
+    if (isWebApp()) void codexConnection.connect()
     const enabled = codexConnection.subscribe(() => {
       if (codexConnection.getSnapshot().status === 'connected' && globalThis.chrome?.storage?.local) {
         void chrome.storage.local.set({ 'galta.ai.enabled': true }).catch(() => undefined)

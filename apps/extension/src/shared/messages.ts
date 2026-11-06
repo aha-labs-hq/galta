@@ -1,6 +1,7 @@
 import type { CollectionItemInput } from './collection'
 import type { MediaSettingsRequest } from '@galta/canvas'
 import type { AccountRequest } from './account'
+import type { SpeechGrantRequest } from '@galta/capture'
 
 export type GaltaMessage =
   | { type: 'setup-status' }
@@ -16,6 +17,7 @@ export type GaltaMessage =
   | { type: 'collection-list' }
   | { type: 'collection-remove'; id: string }
   | { type: 'account'; request: AccountRequest }
+  | { type: 'speech-authorize'; request: SpeechGrantRequest }
 
 export type CodexAccount = {
   type: string

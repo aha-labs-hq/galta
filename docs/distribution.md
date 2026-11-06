@@ -72,6 +72,19 @@ claims to have checked a browser profile or completed account sign-in.
 
 ### Mac companion window
 
+The optional `speech/1` capability handles recorded-request transcription.
+The extension sends bounded mono 16 kHz PCM audio over an authenticated
+`com.galta.companion` port; the runtime uses Launch Services to open the immutable
+release's `Helpers/GaltaSpeech.app`. A private Unix socket carries the request
+and cancellation. The helper's speech usage description owns the macOS consent
+prompt. Recognition requires Apple's on-device engine; there is no cloud
+fallback or bundled speech model. Browser microphone permission is separate.
+Cancellation closes the native port, ends recognition and removes its
+temporary audio file. An older Mac app returns an explicit update error while
+the saved original and typed request remain available. This optional capability
+does not change the required runtime lifecycle protocol. A source build or
+ad-hoc speech test does not prove permission persistence in a signed update.
+
 The Mac app is a small connection utility. The canvas remains the place to create
 and manage accounts. A healthy home window offers the installed Chrome and Dia;
 each opens the Galta canvas page in that browser (user decision, 2026-10-16).

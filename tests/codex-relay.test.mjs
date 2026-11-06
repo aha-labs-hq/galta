@@ -97,6 +97,8 @@ test('without Codex the relay answers every request with the step that sets it u
     // Notifications need no answer; the next request gets the same one.
     host.stdin.write(Buffer.concat([frame({ method: 'initialized' }), frame({ id: 2, method: 'account/read', params: {} })]))
     expect((await output.next()).value).toMatchObject({ id: 2, error: { code: -32001 } })
+    host.stdin.write(frame({ id: 3, method: 'galta/model/transport', params: {inputBytes: 10} }))
+    expect((await output.next()).value).toMatchObject({id:3,error:{code:-32001}})
     host.stdin.end()
     expect(await host.exited).toBe(0)
   } finally {
@@ -185,4 +187,36 @@ for await (const chunk of Bun.stdin.stream()) {
     clearTimeout(deadline); host?.kill(); if (host) await host.exited
     await rm(directory, { recursive: true, force: true })
   }
+}, 10_000)
+
+test('history measurement stays in the native relay and only a transport choice reaches the browser', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'galta-relay-transport-'))
+  const fakeCodex = join(directory, 'codex')
+  let host
+  try {
+    await writeFile(fakeCodex, `#!${process.execPath}
+let buffer = ''
+for await (const chunk of Bun.stdin.stream()) {
+  buffer += Buffer.from(chunk).toString(); let end
+  while ((end = buffer.indexOf('\\n')) >= 0) {
+    const message = JSON.parse(buffer.slice(0,end)); buffer = buffer.slice(end+1)
+    const result = message.method === 'thread/items/list'
+      ? {data:[{item:{type:'imageGeneration',result:'private-pixels'.repeat(800000)}}],nextCursor:null}
+      : {echo:message.method}
+    await Bun.stdout.write(JSON.stringify({id:message.id,result})+'\\n')
+  }
+}
+`)
+    await chmod(fakeCodex, 0o700)
+    host = Bun.spawn([process.execPath, join(root, 'native/adapters/codex/host.ts'), origin], {
+      env: { ...process.env, GALTA_CODEX_BIN: fakeCodex, GALTA_MCP_BIN: fakeCodex, GALTA_WORKSPACE_DIRECTORY: join(directory, 'workspaces'), GALTA_RUNTIME_DIRECTORY: join(directory, 'runtime') },
+      stdin: 'pipe', stdout: 'pipe', stderr: 'pipe'
+    })
+    const output = messages(host.stdout)
+    host.stdin.write(frame({ id: 'choice', method: 'galta/model/transport', params: {threadId:'thread', inputBytes:200} }))
+    expect((await output.next()).value).toEqual({id:'choice',result:{modelProvider:'galta_openai_http',reason:'large-context'}})
+    host.stdin.write(frame({ id: 'next', method: 'fixture/healthy' }))
+    expect((await output.next()).value).toEqual({id:'next',result:{echo:'fixture/healthy'}})
+    host.stdin.end(); expect(await host.exited).toBe(0)
+  } finally { host?.kill(); if (host) await host.exited; await rm(directory, {recursive:true,force:true}) }
 }, 10_000)

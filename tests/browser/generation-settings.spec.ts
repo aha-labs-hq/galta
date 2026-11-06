@@ -115,3 +115,24 @@ test('without the Mac app the view says what to do and offers no dead controls',
   await expect(dialog.getByText('Open Galta for Mac to connect a provider.')).toBeVisible()
   await expect(dialog.locator('.generation-connect')).toHaveCount(0)
 })
+
+test('the local web runtime can manage providers without an extension id', async ({ page }) => {
+  await fixture(page)
+  await page.goto('/canvas/index.html')
+  await page.evaluate(async () => {
+    const { installWebRuntime } = await import('/shared/hostRuntime.ts')
+    installWebRuntime(chrome.runtime)
+    delete (chrome.runtime as any).id
+  })
+  await page.locator('.settings-corner').getByRole('button', { name: 'Settings', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('button', { name: /^Generation/ })).toContainText('Not connected')
+  await dialog.getByRole('button', { name: /^Generation/ }).click()
+  const row = provider(page, 'BytePlus')
+  await row.locator('.generation-connect').click()
+  await row.getByLabel('BytePlus API key').fill(VALID)
+  await row.getByLabel('BytePlus API key').press('Enter')
+  await expect(row.getByText('Connected', { exact: true })).toBeVisible()
+  await row.getByRole('button', { name: 'Disconnect', exact: true }).click()
+  await expect(row.locator('.generation-connect')).toBeVisible()
+})

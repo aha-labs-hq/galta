@@ -3,7 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { ConversationStore } from '../canvas/conversationStore'
 import { createRoot } from 'react-dom/client'
-import { ConversationDock } from '../canvas/ConversationDock'
+import { ConversationDock, type PendingQuestion } from '../canvas/ConversationDock'
 import type { CanvasLocator } from '../canvas/agentFocus'
 import { RuntimeMenu, SessionMenu } from '../canvas/RuntimeMenu'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -24,6 +24,10 @@ function TestConversation() {
   const query = new URLSearchParams(location.search), long = query.has('long')
   const modelMenu = query.has('model-menu')
   const error = query.get('error') ?? ''
+  const currentError = query.has('recovered') ? '' : error
+  const [question, setQuestion] = useState<PendingQuestion | null>(null)
+  const [answers] = useState<unknown[]>([])
+  const [failedAnswers] = useState<unknown[]>([])
   const [open, setOpen] = useState(modelMenu)
   const [command] = useState(() => {
     let value = ''
@@ -68,6 +72,17 @@ function TestConversation() {
   useEffect(() => {
     const fixture = {
       set: conversation.set,
+      ask(questions: unknown[], fail = false) {
+        let attempt = 0
+        setQuestion({ id: crypto.randomUUID(), method: 'item/tool/requestUserInput', params: { questions }, answer: async value => {
+          answers.push(value)
+          await new Promise(resolve => setTimeout(resolve, 150))
+          if (fail && ++attempt === 1) { failedAnswers.push(value); throw new Error('The connection closed. Try again.') }
+          setQuestion(null)
+        } })
+      },
+      answers, failedAnswers,
+      draft: command.getSnapshot,
       selectSession(sessionId: string, turn: CreativeConversationTurn | null) {
         setRuntime(runtime => ({ ...runtime, sessionId, sessionLabel: sessionId }))
         conversation.set(turn)
@@ -112,7 +127,7 @@ function TestConversation() {
   })
   // ?external=<activity> renders the compact line an external agent's work uses.
   const external = query.get('external') ?? undefined
-  return <main className="galta-shell" style={query.has('ink') ? { backgroundColor: 'var(--graphite-base)' } : undefined}><ConversationDock locator={locator} external={Boolean(external)} activity={external} title={runtime.sessionLabel} sessionId={runtime.sessionId} turns={history} conversation={conversation} state={busy ? 'streaming' : error ? 'failed' : turn?.status === 'completed' ? 'completed' : turn ? 'stopped' : 'idle'} error={error} question={null} command={command} task={task}
+  return <main className="galta-shell" style={query.has('ink') ? { backgroundColor: 'var(--graphite-base)' } : undefined}><ConversationDock locator={locator} external={Boolean(external)} activity={external} title={runtime.sessionLabel} sessionId={runtime.sessionId} turns={history} conversation={conversation} state={busy ? 'streaming' : currentError ? 'failed' : turn?.status === 'completed' ? 'completed' : turn ? 'stopped' : 'idle'} error={currentError} question={question} command={command} task={task} onNewConversation={() => { setTurn(null); setOpen(false) }}
     actions={<SessionMenu open={menu === 'Conversation'} onOpen={open => setMenu(open ? 'Conversation' : null)} runtime={runtime} sessions={[{ id: runtime.sessionId, label: runtime.sessionLabel, turns: [] }]} busy={false} onSelect={() => {}} onNew={() => { setTurn(null); setMenu(null); setOpen(false) }} />}
     runtime={<RuntimeMenu open={menu === 'Model'} onOpen={open => setMenu(open ? 'Model' : null)} runtime={runtime} models={modelMenu ? menuModels : []} efforts={modelMenu ? menuEfforts : ['low', 'medium', 'high']} status="connected" plan={modelMenu ? 'pro' : ''} usage={modelMenu ? 20 : null} error={null} busy={busy} onChange={(field, value) => setRuntime(r => ({ ...r, [field]: value }))} onConnect={() => {}} />} onArtifactDownload={query.has('artifact') || query.has('artifact-delivery') || query.has('artifact-delivery-managed') ? async (uri, receipt) => { artifactDownloads.push(uri); artifactDownloadGrants.push(receipt ?? null) } : undefined} onSubmit={() => {
     if (busy && turn) {

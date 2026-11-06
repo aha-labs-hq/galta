@@ -29,8 +29,8 @@ export async function copyCodexTestAssets(source: string, home: string) {
   }
 }
 export async function codexTestHome(source = process.env.CODEX_HOME ?? join(homedir(), '.codex')) {
-  const directory = await mkdtemp(join(tmpdir(), 'galta-codex-test-')), home = join(directory, 'codex')
-  await mkdir(home, { mode: 0o700 })
+  const directory = await mkdtemp(join(tmpdir(), 'galta-codex-test-')), home = join(directory, 'runtime', 'codex')
+  await mkdir(home, { recursive: true, mode: 0o700 })
   const optionalRead = async (path: string) => readFile(path, 'utf8').catch(error => { if (error.code === 'ENOENT') return ''; throw error })
   const config = Bun.TOML.parse(await optionalRead(join(source, 'config.toml'))) as Record<string, unknown>
   const entries = providerKeys.filter(key => config[key] !== undefined).map(key => `${key} = ${inlineToml(config[key])}`)

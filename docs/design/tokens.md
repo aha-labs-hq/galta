@@ -20,7 +20,17 @@ Tokens give related components a coherent vocabulary. Their values are the
 current implementation, open to refinement through the rendered experience.
 Preserve the intent—artwork takes precedence, actions are easy to find, and
 the agent feels present when needed—while exercising judgment about color,
-density and form in each context. Restraint should leave room for character.
+density and form in each context. Restraint should leave room for character. New controls inherit this vocabulary;
+recording does not introduce simulated hardware, metallic finishes or a separate
+set of button materials. Its abstract laser pointer uses the dedicated
+`recording-laser-ink` and `recording-laser-core` tokens: a fine warm-red line,
+pale center and a narrow soft edge. The voice field refracts the artwork itself.
+Its displacement, contrast and temporal envelope are separate: once microphone
+activity crosses the gate, soft speech has a visible minimum response at normal
+zoom. This display gain never alters recorded audio or evidence.
+Wave origins stay in surface coordinates. Time spacing handles rest, distance
+spacing handles motion, and cumulative travel fades the wake without reviving
+old waves when the pointer turns back.
 
 ## The experience these tokens describe
 

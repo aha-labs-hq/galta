@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { themeLength, themeNumber } from '../design/theme'
+import { unfoldingHeight } from '../components/Unfold'
 import { LightPaints, LIGHT, travel } from './agentLight'
 import './dock-surface.css'
 
@@ -26,7 +27,7 @@ const coreRatio = .6, turnRatio = 1 / .6
 function turn(p: number, x: number, y: number, dx: number, dy: number, sweep: 0 | 1) {
   const radius = p * coreRatio, angle = Math.PI / 6
   const d = radius * (1 - Math.cos(angle)), c = d / Math.tan(angle)
-  const b = 3 * Math.hypot(c, d) ** 3 / (2 * d * radius)
+  const b = radius ? 3 * Math.hypot(c, d) ** 3 / (2 * d * radius) : 0
   const a = p - radius + radius * Math.sin(angle) - c - b
   const arc = radius * (Math.cos(angle) - Math.sin(angle))
   const sign = sweep ? 1 : -1
@@ -44,15 +45,16 @@ function turn(p: number, x: number, y: number, dx: number, dy: number, sweep: 0 
 function outline(width: number, top: number, bottom: number, radius: number, crown: number) {
   const limit = Math.min(width, bottom - top) / 2
   const shoulder = Math.min(radius * turnRatio, limit), corner = Math.min(crown * turnRatio, limit)
-  const rise = corner < .5 ? top : top + corner
+  const rise = top + corner
   return {
     rise,
     left: `M ${-shoulder} ${bottom} ${turn(shoulder, -shoulder, bottom, 1, 0, 0)} L 0 ${rise}`,
-    crown: corner < .5 ? `L ${width} ${top}`
-      : `${turn(corner, 0, rise, 0, -1, 1)} L ${width - corner} ${top} ${turn(corner, width - corner, top, 1, 0, 1)}`,
+    crown: `${turn(corner, 0, rise, 0, -1, 1)} L ${width - corner} ${top} ${turn(corner, width - corner, top, 1, 0, 1)}`,
     right: `L ${width} ${bottom - shoulder} ${turn(shoulder, width, bottom - shoulder, 0, 1, 0)}`,
   }
 }
+
+export type DockSurfaceMotion = { resize(fromDepth: number, options: KeyframeAnimationOptions): Animation[] }
 
 /** The dock's painted silhouette. The composer body is one filled outline
  * attached to the bottom edge; its crown squares as the reading sheet rises
@@ -64,7 +66,7 @@ function outline(width: number, top: number, bottom: number, radius: number, cro
  * line between them. While an agent works, one light travels the edge of the
  * whole dock, around the reading sheet when it is open, lit from within the
  * dock so it never borrows the canvas behind it. Render it after the composer. */
-export function DockSurface({ composer, working }: { composer: RefObject<HTMLElement | null>; working: boolean }) {
+export function DockSurface({ composer, working, motion }: { composer: RefObject<HTMLElement | null>; working: boolean; motion?: RefObject<DockSurfaceMotion | null> }) {
   const surface = useRef<SVGSVGElement>(null)
   const trace = useRef<SVGSVGElement>(null)
   const materialId = useId()
@@ -78,10 +80,10 @@ export function DockSurface({ composer, working }: { composer: RefObject<HTMLEle
     const sides = box.querySelector('.dock-surface-edge')!, crownEdge = box.querySelector<SVGPathElement>('.dock-surface-crown')!
     const edgePaint = box.querySelector(`[id="${materialId}-edge"]`)!, paths = [...dock.querySelectorAll('path')]
     const silhouette = dock.querySelector('.dock-trace-silhouette')!
-    let width = 0, height = 0, depth = 0
+    let width = 0, height = 0, depth = 0, paintedCrown = radius
     const draw = () => {
       const sheet = Math.max(0, height - depth), reach = radius * turnRatio
-      const crown = radius * (1 - Math.min(1, sheet / (reach * 2)))
+      const crown = paintedCrown = radius * (1 - Math.min(1, sheet / (reach * 2)))
       box.style.height = `${depth}px`
       const body = width > 0 && depth > 0 ? outline(width, 0, depth, radius, crown) : null
       for (const face of faces) face.setAttribute('d', body ? `${body.left} ${body.crown} ${body.right} Z` : '')
@@ -94,6 +96,29 @@ export function DockSurface({ composer, working }: { composer: RefObject<HTMLEle
       for (const each of paths) each.setAttribute('d', contour)
       silhouette.setAttribute('d', contour && `${contour} Z`)
     }
+    // A composer mode change commits its final layout once. Morph the same
+    // paths inside that final SVG box; its overflow carries the previous crown
+    // above the box during contraction. Corners and glyphs are never scaled.
+    if (motion) motion.current = { resize(fromDepth, options) {
+      const fromCrown = paintedCrown
+      const bounds = dock.getBoundingClientRect()
+      width = bounds.width; height = bounds.height; depth = body.getBoundingClientRect().height
+      draw()
+      const reading = body.parentElement?.querySelector('.conversation-presence')
+      const sheet = reading ? unfoldingHeight(reading) : 0
+      const crown = radius * (1 - Math.min(1, sheet / (radius * turnRatio * 2)))
+      const from = outline(width, depth - fromDepth, depth, radius, fromCrown)
+      const to = outline(width, 0, depth, radius, crown)
+      const animate = (path: Element, first: string, last: string) => path.animate([{ d: `path("${first}")` }, { d: `path("${last}")` }], options)
+      const animations = faces.map(face => animate(face, `${from.left} ${from.crown} ${from.right} Z`, `${to.left} ${to.crown} ${to.right} Z`))
+      animations.push(animate(sides, `${from.left} M ${width} ${from.rise} ${from.right}`, `${to.left} M ${width} ${to.rise} ${to.right}`),
+        animate(crownEdge, `M 0 ${from.rise} ${from.crown}`, `M 0 ${to.rise} ${to.crown}`))
+      if (dock.dataset.working === 'true' && !reading?.getAnimations().length) {
+        const a = outline(width, depth - fromDepth, height, radius, radius), b = outline(width, 0, height, radius, radius)
+        for (const path of [...paths, silhouette]) animations.push(animate(path, `${a.left} ${a.crown} ${a.right}`, `${b.left} ${b.crown} ${b.right}`))
+      }
+      return animations
+    } }
     const size = (entry: ResizeObserverEntry) => entry.borderBoxSize[0]!
     const bounds = dock.getBoundingClientRect()
     width = bounds.width; height = bounds.height; depth = body.getBoundingClientRect().height
@@ -109,8 +134,8 @@ export function DockSurface({ composer, working }: { composer: RefObject<HTMLEle
       draw()
     })
     observer.observe(dock); observer.observe(body)
-    return () => observer.disconnect()
-  }, [composer, radius, materialId])
+    return () => { observer.disconnect(); if (motion) motion.current = null }
+  }, [composer, radius, materialId, motion])
   // The light moves only while the agent works, and holds still as it fades.
   // Without motion, the hairline alone carries the state.
   useEffect(() => {

@@ -7,10 +7,12 @@ export { CodexAgentRuntime, additionalContext, conversationItem, type CodexJsonR
 export { CodexMetadata, type GeneratedNames } from './codexMetadata'
 
 import type { BrowserContext, CanvasMessage, ExecutionContext } from '@galta/canvas'
+import type { RecordingEvidence } from '@galta/capture'
 export type AgentRunState = 'idle' | 'preparing' | 'streaming' | 'completed' | 'stopped' | 'failed'
 export type AgentInput = {
   projectId: ProjectId; branchId: string
   canvas?: CanvasMessage
+  recording?: RecordingEvidence
   browser?: BrowserContext
   execution: ExecutionContext
   instruction: string; runtime: RuntimeContext

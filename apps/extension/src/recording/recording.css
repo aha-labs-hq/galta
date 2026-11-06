@@ -1,0 +1,75 @@
+.recording-pointer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: var(--layer-recording-pointer); }
+.recording-pointer[hidden] { display: none; }
+.recording-attachment { display: flex; align-items: center; gap: var(--space-1); margin-bottom: var(--space-2); }
+.recording-playback { width: var(--toast-width); max-width: calc(100vw - var(--space-6)); }
+.recording-playback video { display: block; width: 100%; max-height: var(--recording-playback-height); border-radius: var(--radius-control); }
+.recording-playback p { font-size: var(--text-caption); color: var(--muted-foreground); margin-top: var(--space-2); }
+.recording-connect-row { display: flex; align-items: center; gap: var(--space-1); }
+.recording-connect-row .composer-enable { flex: 1; }
+.recording-wait { margin: var(--space-1) var(--space-2); color: var(--muted-foreground); font-size: var(--text-label); }
+@media (forced-colors: active) { .recording-pointer { display: none; } }
+.recording-field { position: absolute; left: 0; top: 0; width: calc(var(--recording-field-radius) * 2); height: calc(var(--recording-field-radius) * 2); will-change: transform; }
+[data-recording-pointer] .excalidraw__canvas { cursor: var(--recording-cursor) !important; }
+@media (forced-colors: active) { [data-recording-pointer] .excalidraw__canvas { cursor: auto !important; } }
+
+/* One mounted composer. Mode changes reserve their final layout once; the
+   motion owner translates and clips these existing rows before the next paint. */
+.conversation-composer { display: flex; flex-direction: column; }
+.conversation-composer > * { flex-shrink: 0; }
+.conversation-composer[data-capturing] { padding: var(--space-1) var(--space-3); padding-bottom: max(var(--space-1), env(safe-area-inset-bottom)); }
+.composer-input-region, .composer-context-region { overflow: clip; }
+.conversation-composer[data-capturing] :is(.composer-input-region, .composer-context-region) { height: 0; }
+.composer-input-row { clip-path: inset(0 0 0 0); }
+.conversation-composer[data-capturing] .composer-input-row { clip-path: inset(50% 0 50% 0); }
+.composer-footer-region { height: var(--target); position: relative; }
+.conversation-composer[data-capturing] .composer-footer-region { height: 0; }
+.composer-footer-region > .composer-footer { position: absolute; bottom: 0; left: 0; right: 0; }
+.conversation-composer[data-capturing] .composer-footer { pointer-events: none; }
+.composer-runtime-slot { display: flex; min-width: 0; gap: var(--space-1); }
+.composer-conversation-slot, .composer-runtime-slot, .composer-connect { clip-path: inset(0 0 0 0); }
+.conversation-composer[data-capturing] :is(.composer-conversation-slot, .composer-runtime-slot, .composer-connect) { clip-path: inset(100% 0 0 0); pointer-events: none; }
+.conversation-composer[data-capturing] :is(.composer-submit, .composer-stop) { display: none; }
+.conversation-composer[data-morphing] :is(.composer-input-region, .recording-context) { overflow: visible; }
+.conversation-composer[data-instant] * { transition-duration: 0s !important; }
+.recording-control { display: flex; flex: none; pointer-events: auto; }
+.recording-control[hidden] { display: none; }
+.recording-primary { width: var(--recording-control-width); gap: var(--space-1); padding-inline: var(--space-2); color: var(--muted-foreground); }
+.recording-primary[data-recording=true] { color: var(--foreground); }
+.recording-glyph { position: relative; width: var(--icon-small); height: var(--icon-small); display: block; flex: none; }
+.recording-glyph-ring { width: 100%; height: 100%; display: block; fill: none; stroke: currentColor; stroke-width: var(--stroke-icon); transition: transform var(--motion-panel) var(--ease-sheet); }
+.recording-glyph-core { --recording-core-size: calc(var(--recording-indicator-size) - var(--stroke-surface)); position: absolute; left: calc((var(--icon-small) - var(--recording-core-size)) / 2); top: calc((var(--icon-small) - var(--recording-core-size)) / 2); width: var(--recording-core-size); height: var(--recording-core-size); border-radius: calc(var(--recording-core-size) / 2); background: currentColor; transition: transform var(--motion-panel) var(--ease-sheet), border-radius var(--motion-panel) var(--ease-sheet); }
+.recording-primary[data-recording=true] .recording-glyph-ring { transform: scale(calc(var(--space-2) / (var(--icon-small) - var(--stroke-surface) * 2))); }
+.recording-primary[data-recording=true] .recording-glyph-core { --recording-core-scale: calc(var(--space-2) / var(--recording-core-size)); transform: scale(var(--recording-core-scale)); border-radius: calc(var(--radius-mark) / var(--recording-core-scale)); }
+.recording-primary-word { display: grid; overflow: clip; line-height: var(--leading-ui); }
+.recording-primary-word > span { grid-area: 1 / 1; transition: transform var(--motion-panel) var(--ease-sheet); }
+.recording-primary-word > span:last-child { transform: translateY(100%); }
+.recording-primary[data-recording=true] .recording-primary-word > span:first-child { transform: translateY(-100%); }
+.recording-primary[data-recording=true] .recording-primary-word > span:last-child { transform: translateY(0); }
+.recording-primary kbd { overflow: clip; width: 0; opacity: 0; font-family: inherit; font-weight: 400; font-size: var(--text-caption); color: var(--muted-foreground); transition: opacity var(--motion-fast) var(--ease-out); }
+.recording-primary[data-recording=true] kbd { width: 3ch; opacity: 1; }
+.recording-context { position: relative; overflow: clip; height: var(--target-compact); margin-bottom: var(--space-2); font-size: var(--text-label); pointer-events: none; }
+.recording-context[data-state=capturing] { height: var(--target); margin: 0; }
+.recording-context[data-state=idle] { height: 0; margin: 0; }
+.recording-take { position: absolute; inset-inline: 0; top: calc((100% - var(--target-compact)) / 2); height: var(--target-compact); display: flex; align-items: center; justify-content: space-between; clip-path: inset(0 0 0 0); }
+.recording-context[data-state=idle] .recording-take { clip-path: inset(50% 0 50% 0); }
+.recording-status { display: flex; align-items: center; gap: 0; padding-inline: var(--space-2); white-space: nowrap; font-size: var(--text-label); font-weight: 400; pointer-events: auto; }
+.recording-context[data-state=capturing] .recording-status { pointer-events: none; }
+.recording-take-word { display: grid; overflow: clip; width: 9ch; margin-right: var(--space-2); text-align: left; }
+.recording-take-word > span { grid-area: 1 / 1; transition: transform var(--motion-disclosure) var(--ease-sheet); }
+.recording-take-word > span:first-child { transform: translateY(-100%); }
+.recording-context[data-state=capturing] .recording-take-word { width: 3ch; }
+.recording-context[data-state=capturing] .recording-take-word > span:first-child { transform: translateY(0); }
+.recording-context[data-state=capturing] .recording-take-word > span:last-child { transform: translateY(100%); }
+.recording-status time { min-width: var(--recording-time-width); color: var(--muted-foreground); font-size: var(--text-label); font-variant-numeric: tabular-nums; }
+.recording-rec-dot { width: 0; height: var(--recording-indicator-size); margin-right: 0; opacity: 0; flex: none; border-radius: var(--radius-round); background: var(--recording-laser-ink); transition: opacity var(--motion-fast) var(--ease-out); }
+.recording-context[data-state=capturing] .recording-rec-dot { width: var(--recording-indicator-size); margin-right: var(--space-1); opacity: 1; }
+.recording-rec-dot[data-active=true] { animation: recording-breathe var(--motion-breathe) var(--ease-sheet) infinite; }
+@keyframes recording-breathe { 0%, 100% { opacity: 1; } 50% { opacity: var(--recording-breathe-low); } }
+.recording-discard { width: calc(var(--space-4) * 4); flex: none; display: grid; padding-inline: var(--space-2); color: var(--muted-foreground); pointer-events: auto; }
+.recording-discard > * { grid-area: 1 / 1; }
+.recording-discard > span { opacity: 0; }
+.recording-discard > svg { width: var(--icon-small); height: var(--icon-small); justify-self: end; }
+.recording-context[data-state=capturing] .recording-discard { margin-right: calc(var(--recording-control-width) + var(--space-1)); }
+.recording-context[data-state=capturing] .recording-discard > span { opacity: 1; }
+.recording-context[data-state=capturing] .recording-discard > svg { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .recording-rec-dot { animation: none !important; } }

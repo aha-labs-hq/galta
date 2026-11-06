@@ -57,7 +57,7 @@ process.stdin.on('data', chunk => {
       case 'config/read': result = compatibleCodexConfig(); break
       case 'account/read': result = { account: { type: 'apiKey' }, requiresOpenaiAuth: false }; break
       case 'model/list': result = { data: [{ id: 'fixture-model', displayName: 'Fixture', isDefault: true }] }; break
-      case 'galta/config/read': result = { toolContract }; break
+      case 'galta/config/read': result = { toolContract, conversationStorage: 'galta' }; break
       case 'thread/start': case 'thread/fork': {
         const thread = { id: crypto.randomUUID(), turns: [], cwd: p.cwd }; threads.set(thread.id, thread); result = { thread }; break
       }

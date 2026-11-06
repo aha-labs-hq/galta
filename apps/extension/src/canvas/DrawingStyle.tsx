@@ -18,15 +18,21 @@ const lightColors = new Set<string>([drawingPalette.stroke.Gold, drawingPalette.
 const fonts = [defaultDrawingFont.name, 'Georgia', 'Helvetica', 'Nunito', 'Excalifont', 'Comic Shanns', 'Lilita One', 'Cascadia', 'Virgil'] as const
 const heads = [ ['none', 'None'], ['arrow', 'Arrow'], ['triangle', 'Triangle'], ['triangle_outline', 'Open triangle'], ['circle', 'Circle'], ['circle_outline', 'Open circle'], ['diamond', 'Diamond'], ['diamond_outline', 'Open diamond'], ['bar', 'Bar'], ['crowfoot_one', 'One'], ['crowfoot_many', 'Many'], ['crowfoot_one_or_many', 'One or many'] ] as const
 
+export function retainStyleFieldOnEscape(event: KeyboardEvent) {
+  // Radix handles Escape during document capture, before the field can revert
+  // its draft in React's bubbling handler. Keep that first Escape in the field.
+  if (event.target instanceof HTMLInputElement && event.target.dataset.dirty === 'true' && event.target.closest('.style-value')) event.preventDefault()
+}
+
 /** Draft only while editing. One commit per choice, not per keystroke. */
 function ValueInput({ value, label, onCommit, min, max, suffix }: { value: string | number | undefined; label: string; onCommit(value: string): void; min?: number; max?: number; suffix?: string }) {
   const [draft, setDraft] = useState(String(value ?? ''))
   useEffect(() => setDraft(String(value ?? '')), [value])
   const valid = min === undefined ? /^(#[\da-f]{3}|#[\da-f]{6}|transparent)$/i.test(draft) : draft.trim() !== '' && Number.isFinite(Number(draft)) && Number(draft) >= min && Number(draft) <= max!
   const commit = () => { if (valid && draft !== String(value ?? '')) onCommit(draft); else if (!valid) setDraft(String(value ?? '')) }
-  return <span className="style-value control-field"><input type={min === undefined ? 'text' : 'number'} aria-label={label} min={min} max={max} step={1} spellCheck={false} placeholder="Mixed" value={draft} onChange={e => setDraft(e.target.value)} onBlur={commit} onKeyDown={event => {
+  return <span className="style-value control-field"><input type={min === undefined ? 'text' : 'number'} aria-label={label} min={min} max={max} step={1} spellCheck={false} placeholder="Mixed" data-dirty={draft !== String(value ?? '') || undefined} value={draft} onChange={e => setDraft(e.target.value)} onBlur={commit} onKeyDown={event => {
     if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur() }
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setDraft(String(value ?? '')) }
+    if (event.key === 'Escape' && draft !== String(value ?? '')) { event.preventDefault(); event.stopPropagation(); setDraft(String(value ?? '')) }
   }} />{suffix && <span aria-hidden="true">{suffix}</span>}</span>
 }
 function ColorField({ label, value, palette, onChange }: { label: string; value: string | undefined; palette: ReadonlyArray<readonly [string, string]>; onChange(value: string): void }) {

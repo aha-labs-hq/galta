@@ -1,3 +1,4 @@
+declare const __GALTA_WEB_APP__: boolean
 declare const __GALTA_BUILD__: { mode: string; source: string; companion: string }
 declare const __GALTA_COMPANION_URL__: string
 declare module '*.svg?url&no-inline' { const url: string; export default url }

@@ -1,11 +1,12 @@
+import { hostRuntime, hasTaskHost } from '../shared/hostRuntime'
 /** The files Galta's native host keeps for a deleted canvas (its agent
  * working directory and delivered artifacts). Without the extension runtime
  * or an installed host there are none to remove; any other failure is
  * reported to the caller with its reason. */
 export async function removeCanvasFiles(projectId: string, timeout = 60_000): Promise<'removed' | 'kept' | 'none'> {
-  if (!globalThis.chrome?.runtime?.id) return 'none'
+  if (!hasTaskHost()) return 'none'
   return new Promise((resolve, reject) => {
-    const port = chrome.runtime.connect({ name: `galta-canvas:files-${crypto.randomUUID()}` })
+    const port = hostRuntime()!.connect({ name: `galta-canvas:files-${crypto.randomUUID()}` })
     const id = crypto.randomUUID()
     let settled = false
     const finish = (action: () => void) => {
@@ -25,7 +26,7 @@ export async function removeCanvasFiles(projectId: string, timeout = 60_000): Pr
         finish(() => message.error ? reject(new Error(outdated ? 'The app is older than this browser extension; update it, then remove the files from Galta\'s data folder.' : String(message.error.message))) : resolve(message.result?.removed === false ? 'kept' : 'removed'))
       }
     })
-    port.onDisconnect.addListener(() => finish(() => reject(new Error(chrome.runtime.lastError?.message ?? 'The app closed the connection.'))))
+    port.onDisconnect.addListener(() => finish(() => reject(new Error(hostRuntime()!.lastError?.message ?? 'The app closed the connection.'))))
     port.postMessage({ id, method: 'workspace/remove', params: { projectId } })
   })
 }

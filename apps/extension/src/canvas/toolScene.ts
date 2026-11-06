@@ -10,7 +10,7 @@ import { sceneDocument, validateSnapshot, type SceneSnapshot } from './sceneSnap
 import { withPosters } from './htmlPoster'
 import { editorFiles } from './video'
 import type { CanvasRegion } from './observation'
-import type { CanvasWork } from './canvasWork'
+import { CanvasWork } from './canvasWork'
 
 /** Tools depend on document operations, never on an editor or its lifecycle. */
 export type ToolScene = Pick<CanvasScene, 'disposed' | 'restorationVersion' | 'document' | 'elements' | 'files' | 'assets' | 'selectedIds' | 'snapshot' | 'prepare' | 'applyPrepared' | 'preview' | 'clearPresentation' | 'prepareRender'> & { viewport: { x: number; y: number; width: number; height: number; zoom: number; center: { x: number; y: number } } }
@@ -25,7 +25,9 @@ export function prepareToolSnapshot(elements: readonly ExcalidrawElement[], file
 export type PreviewOverlay = { marks: readonly { label: string; bounds: CanvasRegion }[]; grid: boolean }
 
 /** `unrendered` receives the IDs of pages drawn as their title, not their poster. */
-export async function renderToolPreview(source: readonly ExcalidrawElement[], files: BinaryFiles, appState: Partial<AppState>, selectedIds: readonly string[], detail: 'low' | 'high', region?: CanvasRegion, unrendered?: string[], overlay?: PreviewOverlay): Promise<Blob | undefined> {
+export async function renderToolPreview(source: readonly ExcalidrawElement[], files: BinaryFiles, appState: Partial<AppState>, selectedIds: readonly string[], detail: 'low' | 'high', region?: CanvasRegion, unrendered?: string[], overlay?: PreviewOverlay, signal?: AbortSignal): Promise<Blob | undefined> {
+  const work = new CanvasWork(signal ?? new AbortController().signal)
+  work.check()
   const ids = new Set(selectedIds)
   const elements = (ids.size ? source.filter(el => ids.has(el.id)) : source).map(cloneCanvasElement)
   if (!elements.length) return undefined
@@ -36,7 +38,7 @@ export async function renderToolPreview(source: readonly ExcalidrawElement[], fi
   const frame = region ?? (overlay ? padded(getCommonBounds(elements), padding) : undefined)
   const exportingFrame = frame ? restoreElements([{ id: '__observation__', type: 'frame', ...frame, angle: 0 } as ExcalidrawElement], null)[0] as ExcalidrawFrameElement : undefined
   const budget = detail === 'high' ? 2800 : 1400
-  const options = { ...await withPosters(elements, { ...files }, unrendered), appState: { ...appState, exportBackground: true, viewBackgroundColor: themeColor('background'), exportWithDarkMode: false }, exportingFrame, exportPadding: frame ? 0 : padding,
+  const options = { ...await withPosters(elements, { ...files }, unrendered), checkpoint: () => work.checkpoint(), appState: { ...appState, exportBackground: true, viewBackgroundColor: themeColor('background'), exportWithDarkMode: false }, exportingFrame, exportPadding: frame ? 0 : padding,
     getDimensions: (width: number, height: number) => {
       // Raster density belongs to the observation, not the document's world
       // units. Render natively at this budget, including when zoomed in.
@@ -134,7 +136,7 @@ export class TaskScene implements ToolScene {
   restore(snapshot: SceneSnapshot) { this.value = cloneCanvasSnapshot(validateSnapshot(snapshot)); this.restorationVersion++; this.urls.release() }
   prepare(elements: readonly ExcalidrawElement[], files = this.assets) { return prepareToolSnapshot(elements, files, this.value.view) }
   applyPrepared(snapshot: SceneSnapshot, undoable?: boolean, appState?: Partial<AppState>, reveal?: { previous: { has(id: string): boolean }; work: CanvasWork }) { this.restore(snapshot) }
-  async preview(ids = this.selectedIds, detail: 'low' | 'high' = 'low', region?: CanvasRegion, unrendered?: string[], overlay?: PreviewOverlay) { return renderToolPreview(this.elements, this.files, {}, ids, detail, region, unrendered, overlay) }
+  async preview(ids = this.selectedIds, detail: 'low' | 'high' = 'low', region?: CanvasRegion, unrendered?: string[], overlay?: PreviewOverlay, signal?: AbortSignal) { return renderToolPreview(this.elements, this.files, {}, ids, detail, region, unrendered, overlay, signal) }
   // Presentation and editor bitmap caches are view effects. Background tools
   // still observe cancellation at the same preparation boundaries.
   async prepareRender(_elements: readonly ExcalidrawElement[], work: CanvasWork) { work.check() }

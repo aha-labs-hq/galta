@@ -8,6 +8,9 @@ export const TASK_CHANNEL = 'galta-tasks-v1'
 export type TaskSubmission = {
   id: string; projectId: string; commitId: string; instruction: string; runtime: RuntimeContext
   submitted: SubmittedContext; page: { tabId: number; title: string; url: string } | null
+  /** Original already retained locally under [projectId, task id]. Media and
+   * derived evidence never cross the view-to-task message channel. */
+  recording?: { id: string; duration: number }
 }
 export type TaskQuestion = { id: string; method: string; params: Record<string, unknown> }
 export type TaskState = {
@@ -19,6 +22,8 @@ export type TaskState = {
   canSteer?: boolean
   /** Places the agent holds on the canvas for work in progress; view state only. */
   slots?: readonly CanvasSlot[]
+  preparation?: 'recording' | null
+  needsAccount?: boolean
 }
 export type TaskSteer = { id: string; instruction: string }
 /** What the reader of the canvas can see, in scene units. */

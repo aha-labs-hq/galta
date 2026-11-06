@@ -4,6 +4,7 @@ import { codexInstructions } from '../packages/runtime/src/codexInstructions.ts'
 import { CODEX_THREAD_CONFIG } from '../packages/runtime/src/codexConfig.ts'
 import { CANVAS_MESSAGE_LABEL, CANVAS_SELECTION_ROUTING_INSTRUCTIONS, CANVAS_COORDINATE_INSTRUCTIONS, CANVAS_TOOL_NAMES, canvasMessageContextSchema, summarizeCanvasEvidence } from '../packages/canvas/src/index.ts'
 import { galtaToolContract } from '../packages/canvas/src/contract'
+import { prepareRecordingEvidence, RECORDING_EVIDENCE_LABEL } from '../packages/capture/src/index.ts'
 
 const input = { projectId: 'p', branchId: 'b', execution: { id: 'bridge/lease', cwd: '/tmp/galta' }, instruction: 'Create a rectangle', runtime: { sessionId: 'moodboard', sessionLabel: 'Moodboard', modelId: 'model', effort: 'Low', providerId: 'codex-app-server' } }
 const observation = {
@@ -13,6 +14,29 @@ const observation = {
   changes: { since: null, status: 'initial', total: 0, items: [], truncated: false }, preview: { status: 'attached', unrenderedCount: 0 }
 }
 const host = { request: async () => ({ decision: 'decline' }) }
+test('recorded requests reach turn/start as reviewed words, timed observations and ordered images', async () => {
+  const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jY1kAAAAASUVORK5CYII='
+  const view = { x: 0, y: 0, width: 100, height: 100, zoom: 1 }
+  const recording = await prepareRecordingEvidence({ id: crypto.randomUUID(), projectId: 'p', duration: 2, microphone: true,
+    transcript: { status: 'available', text: 'original ASR', words: [{ text: 'original ASR', start: .2, end: 1 }], provider: 'apple' },
+    frames: [{ id: 'f1', t: 0, view, dataUrl: image, objectIds: ['a'], objects: [{ id: 'a', bounds: { x: 1, y: 2, width: 3, height: 4 } }], unrenderedIds: [] }],
+    pointers: [{ t: .5, x: 4, y: 5, worldX: 4, worldY: 5, kind: 'move', buttons: 0, view }], limitations: [] })
+  const t = setup(), runtime = new CodexAgentRuntime(t.rpc)
+  const { iterator } = await started(runtime, { ...input, instruction: 'My corrected request', recording })
+  const parts = t.calls.find(call => call.method === 'turn/start').params.input
+  expect(parts[0].text).toBe('My corrected request')
+  const observed = JSON.parse(parts.find(part => part.text?.startsWith(RECORDING_EVIDENCE_LABEL)).text.slice(RECORDING_EVIDENCE_LABEL.length))
+  expect(observed.transcript.text).toBe('original ASR')
+  expect(observed.frames[0].dataUrl).toBeUndefined()
+  expect(observed.pointers).toBeUndefined()
+  expect(observed.moments[0].pointer[0].t).toBe(.5)
+  expect(parts.at(-1)).toEqual({ type: 'image', url: image })
+  await iterator.return()
+  const untouched = setup(), other = new CodexAgentRuntime(untouched.rpc)
+  await expect(other.start({ ...input, recording: { ...recording, projectId: 'other' } }, host)).rejects.toThrow('another canvas')
+  await expect(other.start({ ...input, recording: { ...recording, frames: [{ ...recording.frames[0], dataUrl: 'data:image/png;base64,AQ==' }] } }, host)).rejects.toThrow('evidence hash')
+  expect(untouched.calls).toHaveLength(0)
+})
 function setup() {
   const listeners = new Set(), calls = [], replies = []
   const emit = (method, params, id) => listeners.forEach(listener => listener({ method, params, ...(id === undefined ? {} : { id }) }))
@@ -21,7 +45,7 @@ function setup() {
     async respond(id, result, error) { replies.push({ id, result, error }) },
     async request(method, params) {
       calls.push({ method, params })
-      if (method === 'galta/config/read') return { toolContract: await galtaToolContract() }
+      if (method === 'galta/config/read') return { toolContract: await galtaToolContract(), conversationStorage: 'galta' }
       if (method.startsWith('thread/')) return { thread: { id: 'thread' } }
       if (method === 'turn/start') return { turn: { id: 'turn' } }
       return {}
@@ -37,6 +61,39 @@ async function started(runtime, inputOverride = input, toolHost = host) {
   expect((await iterator.next()).value.state).toBe('streaming')
   return { handle, iterator }
 }
+
+test('a task owns its transport before thread preparation even with no observing view', async () => {
+  const t = setup(), request = t.rpc.request
+  t.rpc.request = async (method, params) => {
+    // With no view, an unowned idle transport can retire between these RPCs,
+    // losing the newly loaded thread before turn/start.
+    expect(t.listeners.size).toBe(1)
+    return request(method, params)
+  }
+  const { iterator } = await started(new CodexAgentRuntime(t.rpc))
+  t.emit('turn/completed', { threadId: 'thread', turn: { id: 'turn', status: 'completed' } })
+  for await (const _ of { [Symbol.asyncIterator]: () => iterator }) { /* drain final persistence */ }
+  expect(t.listeners.size).toBe(0)
+})
+
+test('a completed turn releases its loaded thread, but a writer conflict never releases another owner', async () => {
+  const t = setup(), runtime = new CodexAgentRuntime(t.rpc)
+  const { iterator } = await started(runtime)
+  t.emit('turn/completed', { threadId: 'thread', turn: { id: 'turn', status: 'completed' } })
+  expect((await iterator.next()).value.state).toBe('completed')
+  await iterator.next()
+  expect(t.calls.at(-1)).toEqual({ method: 'thread/unsubscribe', params: { threadId: 'thread' } })
+  const denied = setup(), request = denied.rpc.request
+  denied.rpc.request = async (method, params) => {
+    if (method === 'thread/resume') throw new Error('thread thread already has an active writer')
+    return request(method, params)
+  }
+  const blocked = await new CodexAgentRuntime(denied.rpc).start({ ...input, threadId: 'thread' }, host)
+  const updates = blocked.updates[Symbol.asyncIterator]()
+  await updates.next()
+  await expect(updates.next()).rejects.toThrow('already has an active writer')
+  expect(denied.calls.some(call => call.method === 'thread/unsubscribe' || call.method === 'turn/start')).toBe(false)
+})
 
 test('the canvas surface is one verb per tool, each with one effect', () => {
   expect(CANVAS_TOOL_NAMES).toEqual(['canvas_inspect', 'canvas_capture', 'canvas_report', 'canvas_edit', 'canvas_place', 'canvas_reserve', 'canvas_extract', 'canvas_deliver'])
@@ -65,7 +122,7 @@ test('the runtime supplies an MCP execution context without registering a second
   expect(thread.approvalPolicy).toBe('never')
   expect(thread.sandbox).toBe('danger-full-access')
   // Codex's base prompt and tool block are the prefix a thread's first request
-  // shares with the prompt cache; Galta changes neither.
+  // shares with the prompt cache; Galta does not replace either.
   expect(thread.baseInstructions).toBeUndefined()
   expect(thread.developerInstructions).toBeUndefined()
   expect(thread.dynamicTools).toBeUndefined()
@@ -74,7 +131,8 @@ test('the runtime supplies an MCP execution context without registering a second
   expect(thread.config).toEqual(CODEX_THREAD_CONFIG)
   expect(thread.config['skills.include_instructions']).toBe(false)
   expect(Object.keys(thread.config).some(key => key.startsWith('mcp_servers'))).toBe(false)
-  expect(Object.keys(thread.config).some(key => key.startsWith('features.'))).toBe(false)
+  expect(Object.keys(thread.config).filter(key => key.startsWith('features.'))).toEqual(['features.default_mode_request_user_input'])
+  expect(thread.config['features.default_mode_request_user_input']).toBe(true)
   expect(t.calls.find(c => c.method === 'turn/start').params.outputSchema).toBeUndefined()
   const turn = t.calls.find(c => c.method === 'turn/start').params
   expect(turn.input[0].text).toBe(input.instruction)
@@ -211,6 +269,64 @@ test('provider retries are visible without retrying a user turn or claiming a co
   await iterator.return()
 })
 
+test('model recovery can complete after websocket retries and HTTP fallback exceed thirty seconds', async () => {
+  const t = setup(), runtime = new CodexAgentRuntime(t.rpc)
+  const { iterator } = await started(runtime)
+  const originalTimeout = globalThis.setTimeout, originalClear = globalThis.clearTimeout
+  const timers = new Map()
+  let now = 0, nextId = 0
+  globalThis.setTimeout = (callback, delay, ...args) => { const id = ++nextId; timers.set(id, { at: now + delay, callback: () => callback(...args) }); return id }
+  globalThis.clearTimeout = id => { timers.delete(id) }
+  const advanceTo = time => {
+    for (;;) {
+      const next = [...timers].filter(([, timer]) => timer.at <= time).sort((a, b) => a[1].at - b[1].at)[0]
+      if (!next) break
+      now = next[1].at; timers.delete(next[0]); next[1].callback()
+    }
+    now = time
+  }
+  try {
+    // Replay the observed five websocket failures. Codex then falls back to
+    // HTTP; that transport transition need not itself emit a model item.
+    for (const at of [3_000, 7_000, 11_000, 15_000, 19_000]) {
+      advanceTo(at)
+      t.emit('error', { threadId: 'thread', turnId: 'turn', willRetry: true, error: { message: 'websocket closed by server before response.completed' } })
+      expect((await iterator.next()).value.item).toMatchObject({ type: 'modelRetry', status: 'inProgress' })
+    }
+    advanceTo(65_000)
+    t.emit('item/agentMessage/delta', { threadId: 'thread', turnId: 'turn', itemId: 'reply', delta: 'Recovered over HTTP.' })
+    expect((await iterator.next()).value.item).toMatchObject({ type: 'modelRetry', status: 'completed' })
+    expect((await iterator.next()).value.item.text).toBe('Recovered over HTTP.')
+    t.emit('turn/completed', { threadId: 'thread', turn: { id: 'turn', status: 'completed' } })
+    expect((await iterator.next()).value.state).toBe('completed')
+    expect(t.calls.filter(call => call.method === 'turn/start')).toHaveLength(1)
+    expect(t.calls.some(call => call.method === 'turn/interrupt')).toBe(false)
+  } finally {
+    await iterator.return()
+    globalThis.setTimeout = originalTimeout; globalThis.clearTimeout = originalClear
+  }
+})
+
+for (const ending of ['stop', 'disconnect']) test(`model recovery remains responsive to ${ending}`, async () => {
+  const t = setup(), runtime = new CodexAgentRuntime(t.rpc)
+  const { handle, iterator } = await started(runtime)
+  t.emit('error', { threadId: 'thread', turnId: 'turn', willRetry: true, error: { message: 'Connection interrupted' } })
+  expect((await iterator.next()).value.item.status).toBe('inProgress')
+  if (ending === 'disconnect') {
+    t.emit('galta/connection-lost', { message: 'The local Codex process exited' })
+    await expect(iterator.next()).rejects.toThrow('The local Codex process exited')
+  } else {
+    await runtime.stop(handle.runId)
+    t.emit('turn/completed', { threadId: 'thread', turn: { id: 'turn', status: 'interrupted' } })
+    expect((await iterator.next()).value.item.status).toBe('interrupted')
+    expect((await iterator.next()).value.state).toBe('stopped')
+    expect(t.calls.filter(call => call.method === 'turn/interrupt')).toHaveLength(1)
+  }
+  await iterator.return()
+  expect(t.listeners.size).toBe(0)
+  expect(t.calls.filter(call => call.method === 'turn/start')).toHaveLength(1)
+})
+
 test('a provider retry ending in failure keeps its diagnostics and never reports recovery', async () => {
   const t = setup(), runtime = new CodexAgentRuntime(t.rpc)
   const { iterator } = await started(runtime)
@@ -314,7 +430,8 @@ for (const completed of [false, true]) test(`stop during turn/start preserves ${
   expect((await response).value.turnId).toBe('turn')
   const terminal = iterator.next()
   await new Promise(resolve => setTimeout(resolve, 0))
-  expect(t.calls.filter(call => call.method === 'turn/interrupt')).toHaveLength(completed ? 0 : 1)
+  expect(t.calls.filter(call => call.method === 'galta/turn/cancel')).toEqual(completed ? [] : [{ method: 'galta/turn/cancel', params: { threadId: 'thread' } }])
+  expect(t.calls.filter(call => call.method === 'turn/interrupt')).toHaveLength(0)
   if (!completed) t.emit('turn/completed', { threadId: 'thread', turn: { id: 'turn', status: 'interrupted' } })
   expect((await terminal).value.state).toBe(completed ? 'completed' : 'stopped')
   await iterator.return()
@@ -490,7 +607,7 @@ test('stop while loading runtime configuration prevents both an empty thread and
   await iterator.next()
   const update = iterator.next()
   await runtime.stop(handle.runId)
-  published({ toolContract: await galtaToolContract() })
+  published({ toolContract: await galtaToolContract(), conversationStorage: 'galta' })
   expect((await update).value.state).toBe('stopped')
   await iterator.return()
   expect(t.calls.some(c => c.method === 'turn/start')).toBe(false)
@@ -725,4 +842,69 @@ test('agents are told to look at visual work, and how to see a picture in Code M
   for (const name of CANVAS_TOOL_NAMES) expect(codexInstructions()).toContain(name)
   expect(codexInstructions()).toContain('load the declarations you need in one step')
   expect(codexInstructions()).toContain('answer from it when it shows enough')
+})
+
+test('an old shared-history runtime cannot start or resume a creative conversation', async () => {
+  const t = setup(), original = t.rpc.request
+  t.rpc.request = async (method, params) => method === 'galta/config/read' ? { toolContract: await galtaToolContract() } : original(method, params)
+  const handle = await new CodexAgentRuntime(t.rpc).start(input, host)
+  const iterator = handle.updates[Symbol.asyncIterator]()
+  await iterator.next()
+  await expect(iterator.next()).rejects.toThrow('Update Galta for Mac')
+  expect(t.calls.some(c => c.method.startsWith('thread/') || c.method === 'turn/start')).toBe(false)
+})
+
+for (const previous of [{}, { threadId: 'older-openai-thread' }, { fork: { threadId: 'older-openai-thread', lastTurnId: 'checkpoint' } }]) {
+  test(`the installed transport policy applies to ${previous.fork ? 'forked' : previous.threadId ? 'resumed' : 'new'} conversations without replaying a turn`, async () => {
+    const t = setup(), request = t.rpc.request
+    t.rpc.request = async (method, params) => {
+      const result = await request(method, params)
+      return method === 'galta/config/read' ? { ...result, modelProvider: 'galta_openai' } : result
+    }
+    const { iterator } = await started(new CodexAgentRuntime(t.rpc), { ...input, ...previous })
+    const preparation = t.calls.find(call => ['thread/start', 'thread/resume', 'thread/fork'].includes(call.method))
+    expect(preparation.params.modelProvider).toBe('galta_openai')
+    expect(preparation.params.model).toBe(input.runtime.modelId)
+    t.emit('turn/completed', { threadId: 'thread', turn: { id: 'turn', status: 'completed' } })
+    for await (const _ of { [Symbol.asyncIterator]: () => iterator }) {}
+    expect(t.calls.filter(call => call.method === 'turn/start')).toHaveLength(1)
+    expect(t.calls.at(-1)).toEqual({ method: 'thread/unsubscribe', params: { threadId: 'thread' } })
+  })
+}
+
+test('large history uses the native transport decision before resuming, without sending the draft twice', async () => {
+  const t = setup(), request = t.rpc.request
+  t.rpc.request = async (method, params) => {
+    if (method === 'galta/model/transport') { t.calls.push({ method, params }); return { modelProvider: 'galta_openai_http', reason: 'large-context' } }
+    const result = await request(method, params)
+    return method === 'galta/config/read' ? { ...result, modelTransport: 1, modelProvider: 'galta_openai' } : result
+  }
+  const { iterator } = await started(new CodexAgentRuntime(t.rpc), { ...input, threadId: 'older-thread', instruction: '原始请求' })
+  expect(t.calls.slice(0, 4).map(call => call.method)).toEqual(['galta/config/read', 'galta/model/transport', 'thread/resume', 'turn/start'])
+  const decision = t.calls[1].params, resumed = t.calls[2].params, sent = t.calls[3].params
+  expect(decision.threadId).toBe('older-thread')
+  expect(decision.inputBytes).toBe(new TextEncoder().encode(JSON.stringify(sent.input)).byteLength)
+  expect(Object.keys(decision).sort()).toEqual(['inputBytes', 'threadId'])
+  expect(resumed.modelProvider).toBe('galta_openai_http')
+  expect(sent.input[0].text).toBe('原始请求')
+  t.emit('turn/completed', { threadId: 'thread', turn: { id: 'turn', status: 'completed' } })
+  for await (const _ of { [Symbol.asyncIterator]: () => iterator }) {}
+})
+
+test('Stop during context measurement never submits the retained draft or acquires a thread', async () => {
+  const t = setup(), request = t.rpc.request
+  let release
+  const reading = new Promise(resolve => { release = resolve })
+  t.rpc.request = async (method, params) => {
+    if (method === 'galta/model/transport') { t.calls.push({ method, params }); await reading; return { modelProvider: 'galta_openai_http' } }
+    const result = await request(method, params)
+    return method === 'galta/config/read' ? { ...result, modelTransport: 1 } : result
+  }
+  const runtime = new CodexAgentRuntime(t.rpc), handle = await runtime.start({ ...input, threadId: 'older-thread' }, host)
+  const iterator = handle.updates[Symbol.asyncIterator](); await iterator.next()
+  const preparing = iterator.next()
+  await Promise.resolve(); await runtime.stop(handle.runId); release()
+  expect((await preparing).value.state).toBe('stopped')
+  await iterator.return()
+  expect(t.calls.some(call => call.method === 'turn/start' || call.method === 'thread/resume')).toBe(false)
 })

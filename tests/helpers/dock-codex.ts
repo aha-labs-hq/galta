@@ -32,7 +32,7 @@ export async function installDockCodex(page: Page, delay = 0) {
           if (message.type !== 'codex-rpc') throw new Error('Unexpected fixture message: ' + message.type)
           let result: any = {}
           switch (message.method) {
-            case 'galta/config/read': result = { toolContract: w.__galtaToolContract }; break
+            case 'galta/config/read': result = { toolContract: w.__galtaToolContract, conversationStorage: 'galta' }; break
             case 'thread/start': case 'thread/resume': case 'thread/read': result = { thread }; break
             case 'thread/name/set': break
             case 'turn/start': {

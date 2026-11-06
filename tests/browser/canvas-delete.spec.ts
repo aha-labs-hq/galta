@@ -39,6 +39,7 @@ async function footprint(page: Page, id: string) {
     for (const store of ['canvas-snapshots', 'canvas-assets', 'canvas-previews']) result[store] = await count(galta, store, range)
     for (const store of ['workspaces', 'canvas-catalog', 'canvas-views', 'migration-backups']) result[store] = await count(galta, store, id)
     result.drafts = await count(drafts, 'messages', range)
+    for (const store of ['recordings', 'recording-history']) result[store] = await count(drafts, store, range)
     galta.close(); drafts.close()
     return result
   }, id)
@@ -61,8 +62,19 @@ test('an archived canvas is deleted completely, after confirmation, and nothing 
     await new Promise(resolve => { const tx = db.transaction('migration-backups', 'readwrite'); tx.objectStore('migration-backups').put({ project: { id }, snapshots: {} }); tx.oncomplete = resolve })
     db.close()
   }, doomedId)
+  await page.evaluate(async id => {
+    const db = await new Promise<IDBDatabase>(resolve => { const r = indexedDB.open('galta-message-drafts'); r.onsuccess = () => resolve(r.result) })
+    await new Promise(resolve => {
+      const tx = db.transaction(['recordings', 'recording-history'], 'readwrite')
+      const recording = { packet: { id: 'deletion-fixture', projectId: id }, media: new Blob(['original']) }
+      tx.objectStore('recordings').put({ projectId: id, sessionId: 'draft', recording })
+      tx.objectStore('recording-history').put({ projectId: id, requestId: 'sent', recording })
+      tx.oncomplete = resolve
+    })
+    db.close()
+  }, doomedId)
   const before = await footprint(page, doomedId)
-  for (const store of ['canvas-snapshots', 'canvas-assets', 'workspaces', 'canvas-catalog', 'migration-backups', 'drafts']) expect(before[store], store).toBeGreaterThan(0)
+  for (const store of ['canvas-snapshots', 'canvas-assets', 'workspaces', 'canvas-catalog', 'migration-backups', 'drafts', 'recordings', 'recording-history']) expect(before[store], store).toBeGreaterThan(0)
   const kept = (await storedWorkspaces(page)).find(item => item.project.id === keptId)
   const keptFootprint = await footprint(page, keptId)
 

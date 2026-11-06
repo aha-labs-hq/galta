@@ -1,3 +1,4 @@
+import { hasTaskHost } from '../shared/hostRuntime'
 import { CanvasWork } from './canvasWork'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ExcalidrawCanvas } from './ExcalidrawCanvas'
@@ -15,6 +16,9 @@ import { Button } from '@/components/ui/button'
 import '../styles.css'
 import { asCommitId, type ArtifactRead, type RuntimeContext } from '@galta/domain'
 import { normalizeCapture, type CaptureRecord } from '@galta/capture'
+import { useRecording } from '../recording/useRecording'
+import { RecordingPointer } from '../recording/RecordingPointer'
+import { RecordingControl, RecordingPreview } from '../recording/RecordingComposer'
 import { CodexAgentRuntime, type AgentRunState, type ContextPressure } from '@galta/runtime'
 import { type WorkspaceBundle, type CreativeSession } from '@galta/storage'
 import { portableMedia } from './portableMedia'
@@ -43,7 +47,7 @@ import { trimHistory } from './historyTrim'
 import type { StageCamera } from './HistoryStage'
 import type { AppState } from '@excalidraw/excalidraw/types'
 import { captureSubmittedContext, type SubmittedContext } from './context'
-import { useMessageDrafts } from './messageDrafts'
+import { useMessageDrafts, retainSubmittedRecording, readSubmittedRecording } from './messageDrafts'
 import { CanvasTool, type PendingCanvasMutation } from './canvasTool'
 import { CanvasAgentConnection, type CanvasConnectionHost, type CanvasExecution } from './agentConnection'
 import { ConversationDock, type PendingQuestion } from './ConversationDock'
@@ -56,6 +60,7 @@ import { useSourcePage } from './useSourcePage'
 import { mergeSession, renameSession, sessionLabel } from './conversationMetadata'
 import { useConversationMetadata } from './useConversationMetadata'
 import { TaskClient } from '../tasks/client'
+import { recoverInterruptedTurn, TASK_INTERRUPTED_MESSAGE } from '../tasks/recovery'
 import { isTaskRunning, isTaskStateNewer, type TaskState, type TaskStatus } from '../tasks/protocol'
 import './canvas.css'
 
@@ -83,7 +88,7 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
   const taskStatesRef = useRef(new Map<string, TaskState>())
   const taskStopsRef = useRef(new Map<string, () => Promise<void>>())
   const [taskStates, setTaskStates] = useState<Map<string, TaskState>>(() => new Map())
-  const [taskReady, setTaskReady] = useState(!globalThis.chrome?.runtime?.id)
+  const [taskReady, setTaskReady] = useState(!hasTaskHost())
   const canvasConnectionRef = useRef<{ connection: CanvasAgentConnection; ready: Promise<void>; register(): void } | null>(null)
   /** Why this canvas is not registered with the canvas bridge; null while registered or registering. */
   const [canvasLinkProblem, setCanvasLinkProblem] = useState<string | null>(null)
@@ -96,11 +101,12 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
   const [loadError, setLoadError] = useState<string | null>(null)
   const [hasMigrationBackup, setHasMigrationBackup] = useState(false)
   const [runtimeContext, setRuntimeContext] = useState<RuntimeContext>(initial.runtimeDefaults ?? defaultRuntime)
-  const { drafts, read: readDraft, command, ready: draftReady, copyTo: copyDraftTo, flush: flushDraft, reload: reloadDraft } = useMessageDrafts(workspace?.project.id, runtimeContext.sessionId, setImportError)
+  const { drafts, read: readDraft, command, recording: recordedDraft, setRecording, restore: restoreDraft, clearSubmitted, ready: draftReady, copyTo: copyDraftTo, flush: flushDraft, reload: reloadDraft } = useMessageDrafts(workspace?.project.id, runtimeContext.sessionId, setImportError)
   const source = useSourcePage()
   const [submitted, setSubmitted] = useState<SubmittedContext | null>(null)
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState<'Conversation' | 'Model' | null>(null)
   const [settingsView, setSettingsView] = useState<SettingsView>(null)
+  const [accountPurpose, setAccountPurpose] = useState<'speech' | undefined>()
   // Closing Settings returns focus to where it was opened: the corner, or the composer.
   const settingsFromCorner = useRef(false)
   const account = useAccount()
@@ -127,6 +133,9 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
   const [scene, setScene] = useState<CanvasScene | null>(null)
   // Where the agent worked, for this view's camera. It flies only on request.
   const canvasRef = useRef<HTMLElement>(null)
+  const sendRecording = useRef<(id: string) => Promise<boolean>>(async () => false)
+  const recording = useRecording({ scene, surface: canvasRef, projectId, sessionId: runtimeContext.sessionId,
+    read: () => readDraft().recording, save: setRecording, onSend: id => sendRecording.current(id), onError: setImportError })
   const [locator, setLocator] = useState<CanvasLocator | null>(null)
   useEffect(() => {
     const surface = canvasRef.current, shell = shellRef.current
@@ -184,7 +193,7 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
     // the replacement host; this view never writes or replays those tasks.
     let changed = false
     for (const task of taskStatesRef.current.values()) if (task.active) {
-      taskStatesRef.current.set(task.id, { ...task, active: false, canSteer: false, error: 'The background task host closed. Saved changes are preserved.', conversation: { ...task.conversation, status: 'failed', completedAt: Date.now() } })
+      taskStatesRef.current.set(task.id, { ...task, active: false, canSteer: false, error: TASK_INTERRUPTED_MESSAGE, conversation: recoverInterruptedTurn(task.conversation, Date.now()) })
       taskStopsRef.current.delete(task.id); changed = true
     }
     if (changed) setTaskStates(new Map(taskStatesRef.current))
@@ -231,15 +240,16 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
     setLiveTurn(state.conversation)
     setContextPressure(current => current?.tokens === state.pressure?.tokens && current?.window === state.pressure?.window ? current : state.pressure)
     setAgentMessage(state.error)
+    if (state.needsAccount && !previousState?.needsAccount) { setAccountPurpose('speech'); setSettingsView('account') }
     const question = state.question
     if (question?.id !== previous?.question?.id) setQuestion(question ? { ...question, answer: value => {
-      void taskClientRef.current!.command({ method: 'answer', projectId, taskId: state.id, questionId: question.id, value })
-        .then(next => applyTaskResponse(next)).catch(error => setAgentMessage(String(error)))
+      return taskClientRef.current!.command({ method: 'answer', projectId, taskId: state.id, questionId: question.id, value })
+        .then(next => applyTaskResponse(next))
     } } : null)
-    if (question && previous?.question?.id !== question.id) setConversationOpen(true)
+    if (question && question.method !== 'item/tool/requestUserInput' && previous?.question?.id !== question.id) setConversationOpen(true)
   }
   useEffect(() => {
-    if (!globalThis.chrome?.runtime?.id) return
+    if (!hasTaskHost()) return
     let active = true
     const wake = () => {
       if (document.visibilityState === 'visible') void client.refresh().then(() => { if (active) setTaskReady(true) }).catch(error => { if (active) { setTaskReady(false); setAgentMessage(String(error)) } })
@@ -610,6 +620,7 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
   }, [persist, scheduleCanvasCommit, commitCanvasSnapshot, cancelImports])
 
   const openHistory = async () => {
+    if (recording.busy) throw new Error('Finish or cancel the recording before opening Time Machine.')
     if (hasAnyRun() || imports.isPending()) throw new Error('Finish the current canvas change before opening Time Machine.')
     hostedTaskRef.current = null
     historyOpenRef.current = true
@@ -770,7 +781,7 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
   }
 
   useEffect(() => {
-    if (!scene || !workspace?.project.id || !globalThis.chrome?.runtime?.id) return
+    if (!scene || !workspace?.project.id || !hasTaskHost()) return
     const projectId = workspace.project.id
     let disposed = false
     const connection = new CanvasAgentConnection({
@@ -844,6 +855,7 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
     prepare: async () => {
       const current = workspaceRef.current!, editor = editorRef.current
       if (!editor || !draftReady) throw new Error('The canvas is still opening.')
+      if (recording.busy) throw new Error('Finish or cancel the recording before switching canvases.')
       if (hasAnyRun() && !hostedTaskRef.current || imports.isPending()) throw new Error('Finish the current canvas change before switching.')
       if (historyOpenRef.current) throw new Error('Close Time Machine before switching canvases.')
       if (current.project.archivedAt) {
@@ -936,16 +948,18 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
     return () => { cancelled = true }
   }, [codexStatus, runtimeContext.sessionId, codexRuntime, saveSession, persist, taskReady])
 
-  const newSession = useCallback(async () => {
+  const newSession = useCallback(async (preserveDraft = false) => {
+    if (recording.busy) { setImportError('Finish or cancel the recording before switching conversations.'); return }
     hostedTaskRef.current = null
     activeRunRef.current = null
     const active = workspaceRef.current?.agentSessions?.find(s => s.id === runtimeContext.sessionId)
     const activeTask = [...taskStatesRef.current.values()].find(task => task.runtime.sessionId === runtimeContext.sessionId && task.active)
-    if (!activeTask && !active?.turns.length && !active?.threadId && active?.labelSource !== 'user' && !readDraft().command.trim()) {
+    if (!activeTask && !active?.turns.length && !active?.threadId && active?.labelSource !== 'user' && !readDraft().command.trim() && !readDraft().recording) {
       setConversationOpen(false); setComposerFocusRequest(value => value + 1); return
     }
     const session: CreativeSession = { id: makeId('session'), label: 'New conversation', turns: [] }
     const nextRuntime = { ...runtimeContext, sessionId: session.id, sessionLabel: session.label, providerId: 'codex-app-server' }
+    if (preserveDraft) await copyDraftTo(session.id)
     await persist(current => {
       const sessions = [...(current.agentSessions ?? [])]
       if (!sessions.some(s => s.id === runtimeContext.sessionId)) sessions.push({ id: runtimeContext.sessionId, label: runtimeContext.sessionLabel, turns: [] })
@@ -960,7 +974,7 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
     setContextPressure(null)
     setConversationOpen(false)
     setComposerFocusRequest(value => value + 1)
-  }, [persist, runtimeContext, readDraft])
+  }, [persist, runtimeContext, readDraft, recording.busy, copyDraftTo])
 
   const renameConversation = useCallback(async (label: string) => {
     await persist(w => {
@@ -970,13 +984,15 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
     })
   }, [persist, runtimeContext.sessionId])
 
-  const runAgent = useCallback(async () => {
+  const runAgent = useCallback(async (recordingId?: string) => {
     const editor = editorRef.current, current = workspaceRef.current, client = taskClientRef.current
-    const submittedCommand = readDraft().command
+    const draft = readDraft(), submittedCommand = draft.command
     const instruction = submittedCommand.trim()
-    if (!current || !editor || !instruction || !draftReady || !taskReady || leavingRef.current || current.project.archivedAt) return
+    if (recordingId && draft.recording?.packet.id !== recordingId) return false
+    if (!current || !editor || (!instruction && !draft.recording) || (recording.busy && !recordingId) || !draftReady || !taskReady || leavingRef.current || current.project.archivedAt) return
     const activeTask = [...taskStatesRef.current.values()].find(task => task.runtime.sessionId === runtimeContext.sessionId && task.active)
     if (activeTask) {
+      if (draft.recording) { setAgentMessage('Wait for the current task to finish before sending this recorded request.'); return }
       if (!client) { setAgentMessage('The background task host is unavailable.'); return }
       const steerId = makeId('steer')
       setAgentMessage('')
@@ -988,6 +1004,11 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
       return
     }
     if (activeRunRef.current) return
+    // Local account state gates a signed-out Send without a network round trip.
+    // The host still verifies identity when issuing the audio-bound capability.
+    if (draft.recording?.packet.microphone && (draft.recording.packet.transcript.status !== 'available' || !draft.recording.packet.transcript.audio) && account.state && !account.state.user) {
+      setAccountPurpose('speech'); setSettingsView('account'); return
+    }
     if (codexStatus !== 'connected') { setSettingsView('chat'); return }
     if (!client) { setAgentMessage('The background task host is unavailable.'); return }
     const id = makeId('task')
@@ -1002,6 +1023,10 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
       const frozen = captureSubmittedContext(editor)
       const page = source.page
       setSubmitted(frozen)
+      // Explicit Send retries a failed local write. An unchanged recording
+      // only flushes text; it does not serialize its media again.
+      if (draft.recording) await setRecording(draft.recording)
+      await flushDraft()
       const entryCursor = cursorRef.current.id ?? current.project.headCommitId
       const wasPreview = entryCursor !== current.project.headCommitId
       await commitCanvasSnapshot('user')
@@ -1019,15 +1044,20 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
         setRuntimeContext(runtime)
       }
       if (cancelled) return
+      if (draft.recording) await retainSubmittedRecording(projectId, id, draft.recording)
+      if (cancelled) return
       dispatched = true
       const state = await client.command({ method: 'start', input: {
         id, projectId, commitId: workspaceRef.current!.project.headCommitId, instruction,
-        runtime, submitted: frozen, page
+        runtime, submitted: frozen, page, ...(draft.recording ? { recording: { id: draft.recording.packet.id, duration: draft.recording.packet.duration } } : {})
       } })
       applyTaskResponse(state)
       // Submission is asynchronous; retain any text typed after this request.
-      if (readDraft().command === submittedCommand) command.set('')
+      // The task has already been accepted. A local draft-cleanup failure is
+      // reported by the draft owner and cannot turn a running task into failure.
+      await clearSubmitted(draft).catch(() => undefined)
       if (cancelled) await client.command({ method: 'stop', projectId, taskId: id })
+      return true
     } catch (error) {
       setAgentMessage(error instanceof Error ? error.message : 'Unable to start the task')
       setAgentState('failed')
@@ -1035,7 +1065,22 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
       if (activeRunRef.current === attempt) { activeRunRef.current = null; setSubmitted(null) }
       if (cancelled && !dispatched) setAgentState('stopped')
     }
-  }, [codexStatus, command, readDraft, draftReady, taskReady, source.page, runtimeContext, commitCanvasSnapshot, persist, saveSession, projectId, applyTaskResponse])
+  }, [codexStatus, command, readDraft, draftReady, taskReady, source.page, runtimeContext, commitCanvasSnapshot, persist, saveSession, projectId, applyTaskResponse, recording.busy, flushDraft, clearSubmitted, setRecording, account.state])
+
+  sendRecording.current = async id => { setConversationOpen(true); return await runAgent(id) === true }
+
+  const restoreRecording = useCallback(async (requestId: string, instruction: string) => {
+    try {
+      if (recording.busy || activeRunRef.current || [...taskStatesRef.current.values()].some(task => task.active && task.runtime.sessionId === runtimeContext.sessionId) || readDraft().recording || readDraft().command.trim()) throw new Error('Send or clear your current draft before restoring this recording.')
+      const original = await readSubmittedRecording(projectId, requestId)
+      if (!original) throw new Error('The original recording is unavailable on this device.')
+      // Recheck after reading media: a new draft must never be overwritten.
+      if (readDraft().recording || readDraft().command.trim()) throw new Error('Send or clear your current draft before restoring this recording.')
+      await restoreDraft(original, instruction)
+      setAgentMessage(''); setConversationOpen(true)
+    } catch (error) { setImportError(error instanceof Error ? error.message : String(error)) }
+  }, [projectId, runtimeContext.sessionId, recording.busy, readDraft, restoreDraft])
+
 
   const stopAgent = useCallback(async () => {
     try {
@@ -1065,6 +1110,7 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
   }, [placeDroppedReference])
 
   const updateRuntime = useCallback((field: keyof RuntimeContext, value: string) => {
+    if (recording.busy && field === 'sessionId') { setImportError('Finish or cancel the recording before switching conversations.'); return }
     if (field !== 'sessionId' && activeRunRef.current) return
     hostedTaskRef.current = null
     const nextRuntime = {
@@ -1088,12 +1134,12 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
       setAgentState(selected ? selected.conversation.status as AgentRunState : 'idle')
       setAgentMessage(selected?.error ?? '')
       setQuestion(selected?.question ? { ...selected.question, answer: answer => {
-        void taskClientRef.current?.command({ method: 'answer', projectId, taskId: selected.id, questionId: selected.question!.id, value: answer }).then(applyTaskResponse).catch(error => setAgentMessage(String(error)))
+        return taskClientRef.current!.command({ method: 'answer', projectId, taskId: selected.id, questionId: selected.question!.id, value: answer }).then(applyTaskResponse)
       } } : null)
     }
     const current = workspaceRef.current
     if (current) void persist(current => ({ ...current, runtimeDefaults: nextRuntime })).catch(error => setImportError(String(error)))
-  }, [persist, runtimeContext, codexModels])
+  }, [persist, runtimeContext, codexModels, recording.busy])
 
   const selectedCodexModel = codexModels.find((model) => model.id === runtimeContext.modelId)
   const effortOptions = selectedCodexModel?.supportedReasoningEfforts?.map((item) => item.reasoningEffort).filter(Boolean) ?? ['low', 'medium', 'high']
@@ -1221,6 +1267,7 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
         {/* Temporary navigation blocks input without toggling Excalidraw's
             view mode, which deselects objects on both entry and exit. */}
         <ExcalidrawCanvas onMount={handleMount} readOnly={!scene || Boolean(workspace.project.archivedAt)} />
+        <RecordingPointer surface={canvasRef.current} active={recording.active} level={recording.level} />
         {locator && <AgentMark locator={locator} />}
         {locator && !isPreview && <CanvasSlots locator={locator} slots={[
           ...externalSlots.map(slot => ({ ...slot, key: `external:${slot.id}` })),
@@ -1233,7 +1280,7 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
         }} onOpenPage={openSelectedPage} />}
         {scene && <ImportFeedback scene={scene} imports={imports} />}
         {scene && <AgentInvitation scene={scene} available={!workspace.project.archivedAt && imports.jobs.length === 0 && !isPreview} started={shapeCount > 0 || imports.jobs.length > 0 || codexStatus === 'connected' || Boolean(externalAgent)} onConnect={() => setSettingsView('settings')} />}
-        {shapeCount === 0 && imports.jobs.length === 0 && codexStatus === 'connected' && <p className="pointer-events-none absolute inset-0 grid place-content-center text-sm text-muted-foreground">Drag images or videos here, or ask Galta.</p>}
+        {shapeCount === 0 && imports.jobs.length === 0 && codexStatus === 'connected' && <p className="canvas-empty pointer-events-none absolute inset-0 grid place-content-center px-[calc(var(--target-compact)+var(--space-8))] text-center text-sm text-muted-foreground">Drag images or videos here, or ask Galta.</p>}
       </section>
 
       {scene && !workspace.project.archivedAt && <DrawingTools scene={scene} onImport={async files => {
@@ -1252,9 +1299,10 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
       </div>}
       {canvasNotice && <div className="canvas-notice glass-surface canvas-notice-status" role="status">{canvasNotice}</div>}
       {importError && <div className="canvas-notice glass-surface" role="alert">{importError}<Button variant="ghost" size="icon" onClick={() => setImportError(null)} aria-label="Dismiss notice">×</Button></div>}
-      <SettingsDialog account={account} canvasId={canvasConnectionRef.current?.connection.id} canvasProblem={canvasLinkProblem} onCheckCanvas={() => canvasConnectionRef.current?.register()} externalConnected={Boolean(externalAgent)} view={settingsView}
+      <SettingsDialog account={account} accountPurpose={accountPurpose} canvasId={canvasConnectionRef.current?.connection.id} canvasProblem={canvasLinkProblem} onCheckCanvas={() => canvasConnectionRef.current?.register()} externalConnected={Boolean(externalAgent)} view={settingsView}
         onViewChange={target => {
           setSettingsView(target)
+          if (target !== 'account') setAccountPurpose(undefined)
           if (target) return
           if (settingsFromCorner.current) requestAnimationFrame(() => shellRef.current?.querySelector<HTMLElement>('.settings-corner-button')?.focus())
           else setComposerFocusRequest(value => value + 1)
@@ -1265,14 +1313,19 @@ function CanvasSession({ projectId, initial, navigation, sessionRef, codexConnec
         connection={codexStatus === 'connected' ? undefined : { label: codexStatus === 'connecting' ? 'Connecting…' : codexStatus === 'sign-in-required' ? 'Sign in with ChatGPT' : codexStatus === 'error' ? 'Reconnect agent' : 'Connect an agent', onSetup: () => setSettingsView(codexStatus === 'disconnected' ? 'settings' : 'chat') }}
         external={Boolean(externalAgent)}
         title={externalAgent ?? sessionLabel(workspace, runtimeContext.sessionId)}
-        activity={externalAgent ? `${externalAgent} is working` : undefined}
+        activity={externalAgent ? `${externalAgent} is working` : hostedTaskRef.current?.preparation === 'recording' ? 'Preparing recording' : undefined}
         sessionId={runtimeContext.sessionId} focusRequest={composerFocusRequest}
         activeSessionCount={new Set([...taskStates.values()].filter(task => task.active).map(task => task.runtime.sessionId)).size}
         disabled={!scene || !draftReady || navigation.pending || presenting || Boolean(workspace.project.archivedAt)} submitReady={taskReady}
         turns={externalAgent ? [] : workspace.agentSessions?.find(session => session.id === runtimeContext.sessionId)?.turns ?? []}
         conversation={conversation} state={agentState} error={agentMessage} question={question} pressure={externalAgent ? null : contextPressure}
         task={[...taskStates.values()].find(task => task.active && task.runtime.sessionId === runtimeContext.sessionId)}
-        command={command} onSubmit={runAgent} onStop={stopAgent}
+        command={command} onSubmit={async () => { if (readDraft().recording) await recording.send(); else await runAgent() }} onStop={stopAgent}
+        onRestoreRecording={restoreRecording}
+        recording={{ busy: recording.busy, capturing: recording.capturing, attached: Boolean(recordedDraft),
+          control: <RecordingControl controller={recording} onStart={() => setConversationOpen(false)} attached={Boolean(recordedDraft)} disabled={!scene || !draftReady || navigation.pending || presenting || Boolean(workspace.project.archivedAt)} />,
+          preview: <RecordingPreview draft={recordedDraft} controller={recording} /> }}
+        onNewConversation={() => void newSession(true).catch(error => setAgentMessage(String(error)))}
         open={conversationOpen} onOpen={open => { setRuntimeMenuOpen(null); setConversationOpen(open) }} preview={isPreview}
         actions={<SessionMenu open={runtimeMenuOpen === 'Conversation'} onOpen={open => setRuntimeMenuOpen(open ? 'Conversation' : null)} runtime={runtimeContext}
           sessions={workspace.agentSessions ?? []} activeSessionIds={new Set([...taskStates.values()].filter(task => task.active).map(task => task.runtime.sessionId))} busy={!draftReady && !hasHostedTask() && agentState !== 'preparing' && agentState !== 'streaming'}

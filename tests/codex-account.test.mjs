@@ -123,6 +123,7 @@ test('native JSON-RPC errors preserve structured auth status through credential 
       if (message.id === undefined) return
       calls.push(message)
       let result = {}
+      if (message.method === 'galta/config/read') result = { conversationStorage: 'galta' }
       if (message.method === 'config/read') result = compatibleCodexConfig()
       if (message.method === 'account/read') { refreshed ||= message.params.refreshToken; result = account }
       if (message.method === 'model/list') result = { data: [] }

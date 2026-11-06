@@ -1,3 +1,4 @@
+import { hostRuntime } from '../shared/hostRuntime'
 import '../styles.css'
 import '@excalidraw/excalidraw/index.css'
 import { exportToCanvas } from '@excalidraw/excalidraw'
@@ -5,6 +6,8 @@ import { TaskRegistry } from './registry'
 import { executeTask, recoverInterruptedTasks } from './execute'
 import { TASK_CHANNEL, type TaskRequest, type TaskState } from './protocol'
 
+async function start() {
+  if (__GALTA_WEB_APP__) await (await import('../web/host')).startWebHost()
 window.EXCALIDRAW_ASSET_PATH = new URL('../', location.href).href
 // Native export initializes its bundled font registry without an editor.
 const fonts = exportToCanvas({ elements: [], files: {} }).then(async () => {
@@ -46,9 +49,12 @@ channel.onmessage = ({ data }: MessageEvent<TaskRequest>) => {
     }
   })().then(state => channel.postMessage({ requestId: data.requestId, state }), error => channel.postMessage({ requestId: data.requestId, error: error instanceof Error ? error.message : String(error) }))
 }
-let host = chrome.runtime.connect({ name: 'galta-task-host' })
-chrome.runtime.onMessage.addListener((message, _sender, reply) => {
+let host = hostRuntime()!.connect({ name: 'galta-task-host' })
+hostRuntime()!.onMessage.addListener((message, _sender, reply) => {
   if (message.type !== 'task-host-ping') return false
-  host.disconnect(); host = chrome.runtime.connect({ name: 'galta-task-host' })
+  host.disconnect(); host = hostRuntime()!.connect({ name: 'galta-task-host' })
   reply({ ok: true }); return false
 })
+
+}
+void start().catch(error => console.error('Task host could not start', error))

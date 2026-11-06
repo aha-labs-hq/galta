@@ -60,3 +60,58 @@ test('only a confirmed task-host closure reaches open observers; close removes i
     client.close(); expect(listeners.size).toBe(0)
   } finally { client.close(); host.close(); globalThis.chrome = previous }
 })
+
+test('host loss rejects pending requests immediately and the next explicit command opens a fresh host without replay', async () => {
+  const previous = globalThis.chrome, listeners = new Set(), commands = []
+  let ensures = 0, received
+  const accepted = new Promise(resolve => { received = resolve })
+  globalThis.chrome = { runtime: { sendMessage: async () => { ensures++; return { ok: true } }, onMessage: { addListener: fn => listeners.add(fn), removeListener: fn => listeners.delete(fn) } } }
+  const host = new BroadcastChannel(TASK_CHANNEL)
+  host.onmessage = ({ data }) => {
+    if (!data.command) return
+    commands.push(data.command.method)
+    if (data.command.method === 'start') received()
+    else host.postMessage({ requestId: data.requestId, state: [] })
+  }
+  const client = new TaskClient('canvas', () => {}, () => {})
+  try {
+    await client.open()
+    const pending = client.command({ method: 'start', input: { projectId: 'canvas' } }).catch(error => error)
+    await accepted
+    for (const listener of listeners) listener({ type: 'task-host-closed' })
+    expect((await pending).message).toContain('Chat was interrupted')
+    await client.command({ method: 'status', projectId: 'canvas' })
+    expect(ensures).toBe(2)
+    expect(commands).toEqual(['status', 'start', 'status'])
+  } finally { client.close(); host.close(); globalThis.chrome = previous }
+})
+
+for (const ending of ['host loss', 'view closed']) test(`${ending} settles readiness immediately and ignores late readiness and old snapshots`, async () => {
+  const previous = globalThis.chrome, listeners = new Set(), received = [], commands = []
+  let ready, ensures = 0
+  globalThis.chrome = { runtime: { sendMessage: () => ++ensures === 1 ? new Promise(resolve => { ready = resolve }) : Promise.resolve({ ok: true }), onMessage: { addListener: fn => listeners.add(fn), removeListener: fn => listeners.delete(fn) } } }
+  const host = new BroadcastChannel(TASK_CHANNEL)
+  host.onmessage = ({ data }) => {
+    commands.push(data.command.method)
+    host.postMessage({ requestId: data.requestId, state: [] })
+  }
+  const client = new TaskClient('canvas', state => received.push(state), () => {})
+  try {
+    let failure
+    const opening = client.open().catch(error => { failure = error })
+    const staleDelivery = client.channel.onmessage
+    if (ending === 'host loss') for (const listener of listeners) listener({ type: 'task-host-closed' })
+    else client.close()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(failure?.message).toContain(ending === 'host loss' ? 'Chat was interrupted' : 'view has closed')
+    staleDelivery({ data: { state: { projectId: 'canvas', active: true, sequence: 999 } } })
+    expect(received).toEqual([])
+    ready({ ok: true }); await opening
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(commands).toEqual([])
+    if (ending === 'view closed') await client.open()
+    else await client.refresh()
+    expect(commands).toEqual(['status'])
+    expect(ensures).toBe(2)
+  } finally { ready?.({ ok: true }); client.close(); host.close(); globalThis.chrome = previous }
+})

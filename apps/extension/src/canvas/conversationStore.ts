@@ -23,6 +23,7 @@ function sameSteering(a: CreativeConversationTurn['steering'], b: CreativeConver
 function sameContext(a: CreativeConversationTurn['context'], b: CreativeConversationTurn['context']) {
   return a === b || Boolean(a && b && a.canvasTitle === b.canvasTitle && a.unavailablePage === b.unavailablePage &&
     a.page?.title === b.page?.title && a.page?.url === b.page?.url &&
+    a.recording?.id === b.recording?.id && a.recording?.projectId === b.recording?.projectId && a.recording?.duration === b.recording?.duration &&
     a.canvas?.commitId === b.canvas?.commitId && a.canvas?.revision === b.canvas?.revision && a.canvas?.preview === b.canvas?.preview &&
     a.selection.length === b.selection.length && a.selection.every((id, i) => id === b.selection[i]))
 }

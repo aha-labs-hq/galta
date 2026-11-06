@@ -108,3 +108,57 @@ test('the preview keeps late visible objects, empty margins and the submitted bo
   expect(result.unchanged).toBe(true)
   await info.attach('submitted-viewport.jpg', { body: Buffer.from(result.image.split(',')[1]!, 'base64'), contentType: 'image/jpeg' })
 })
+
+test('cooperative evidence export preserves native brush pixels and can be cancelled @serial', async ({ page }) => {
+  const { brushStrokes } = await import('../helpers/brush-workload')
+  const result = await page.evaluate(async operations => {
+    const { scene, engineTest: t } = window as any
+    const { cloneCanvasElement } = await import('/canvas/cloneSnapshot.ts' as string)
+    const { themeColor } = await import('/design/theme.ts' as string)
+    t.apply(operations)
+    const snapshot = JSON.stringify(scene.snapshot().document)
+    const reference = await t.exportToCanvas({ elements: scene.elements.map(cloneCanvasElement), files: scene.files,
+      appState: { ...scene.api.getAppState(), exportBackground: true, viewBackgroundColor: themeColor('background'), exportWithDarkMode: false }, exportPadding: 20,
+      getDimensions: (width: number, height: number) => { const scale = 1400 / Math.max(width, height); return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)), scale } } })
+    const original = await new Promise<Blob>(resolve => reference.toBlob(resolve, 'image/jpeg', .8))
+    const cooperative = await scene.preview([], 'low')
+    const a = new Uint8Array(await original.arrayBuffer()), b = new Uint8Array(await cooperative.arrayBuffer())
+    const abort = new AbortController(), pending = scene.preview([], 'low', undefined, undefined, undefined, abort.signal)
+    setTimeout(() => abort.abort(), 0)
+    let cancelled = false
+    try { await pending } catch (error) { cancelled = (error as Error).name === 'AbortError' }
+    return { identical: a.length === b.length && a.every((v, i) => v === b[i]), cancelled, unchanged: snapshot === JSON.stringify(scene.snapshot().document) }
+  }, brushStrokes)
+  expect(result).toEqual({ identical: true, cancelled: true, unchanged: true })
+})
+
+test('recorded evidence reuses unchanged pixels and follows real edits and camera changes', async ({ page }) => {
+  await page.evaluate(async () => {
+    const w = window as any, { CanvasRecording } = await import('/recording/CanvasRecording.ts' as string)
+    w.engineTest.apply([{ type: 'create_element', id: 'before', elementType: 'rectangle', x: 200, y: 200,
+      props: { width: 120, height: 100, roughness: 0, backgroundColor: '#ff0000', fillStyle: 'solid' } }])
+    w.scene.api.updateScene({ appState: { scrollX: 0, scrollY: 0, zoom: { value: 1 } } })
+    w.evidenceExports = 0
+    const preview = w.scene.preview.bind(w.scene)
+    w.scene.preview = (...args: any[]) => { w.evidenceExports++; return preview(...args) }
+    w.evidenceRecording = new CanvasRecording(document.querySelector('.excalidraw'), w.scene, 'fixture', () => {})
+    await w.evidenceRecording.start(false)
+  })
+  try {
+    await expect.poll(() => page.evaluate(() => (window as any).evidenceRecording.packet.frames.length)).toBeGreaterThanOrEqual(2)
+    const first = await page.evaluate(() => {
+      const w = window as any, [a, b] = w.evidenceRecording.packet.frames
+      return { exports: w.evidenceExports, samePixels: a.dataUrl === b.dataUrl, later: b.t > a.t, distinct: a.id !== b.id, pixels: a.dataUrl }
+    })
+    expect(first).toMatchObject({ exports: 1, samePixels: true, later: true, distinct: true })
+    await page.evaluate(() => (window as any).engineTest.apply([{ type: 'create_element', id: 'after', elementType: 'rectangle', x: 400, y: 200,
+      props: { width: 120, height: 100, roughness: 0, backgroundColor: '#00ff00', fillStyle: 'solid' } }]))
+    await expect.poll(() => page.evaluate(() => (window as any).evidenceRecording.packet.frames.at(-1).objectIds.includes('after'))).toBe(true)
+    const edited = await page.evaluate(() => (window as any).evidenceRecording.packet.frames.at(-1).dataUrl)
+    expect(edited).not.toBe(first.pixels)
+    await page.evaluate(() => (window as any).scene.api.updateScene({ appState: { scrollX: -120, zoom: { value: 1.5 } } }))
+    await expect.poll(() => page.evaluate(() => (window as any).evidenceRecording.packet.frames.at(-1).view.zoom)).toBe(1.5)
+    const moved = await page.evaluate(() => (window as any).evidenceRecording.packet.frames.at(-1).dataUrl)
+    expect(moved).not.toBe(edited)
+  } finally { await page.evaluate(() => (window as any).evidenceRecording.cancel()) }
+})

@@ -6,18 +6,19 @@ import { AccountAvatar } from '@/components/AccountAvatar'
 import { GoogleMark } from '@/components/GoogleMark'
 import { CODE_LENGTH, normalEmail } from '../shared/account'
 import type { Account } from './account'
+import { isWebApp } from '../shared/hostRuntime'
 import { CodeField } from './CodeField'
 import { SettingsRow, ViewHeader } from './SettingsParts'
 
 const RESEND_AFTER = 30_000
 
-type Props = { account: Account; onBack(): void }
+type Props = { account: Account; purpose?: 'speech' | undefined; onBack(): void }
 type Step = 'start' | 'code' | 'profile' | 'delete' | 'delete-code'
 
 /** The Aha Labs account, in one view of Settings. Signed out, it signs in with
  * Google or an emailed code; signed in, it names the person, signs out and
  * deletes the account. The canvas never waits on any of it. */
-export function AccountView({ account, onBack }: Props) {
+export function AccountView({ account, purpose, onBack }: Props) {
   const user = account.state?.user ?? null, google = account.state?.google ?? null
   const [step, setStep] = useState<Step>(user ? 'profile' : 'start')
   const [email, setEmail] = useState(''), [code, setCode] = useState(''), [name, setName] = useState('')
@@ -163,12 +164,12 @@ export function AccountView({ account, onBack }: Props) {
 
   return <>
     <ViewHeader titleRef={title} back={{ label: 'Settings', onClick: onBack }} title="Sign in"
-      description={account.state?.ended ? 'Your session ended. Sign in again to continue.' : 'One Aha Labs account for Galta and our other apps. Your canvases stay on this Mac.'} />
+      description={account.state?.ended ? 'Your session ended. Sign in again to continue.' : purpose === 'speech' ? 'Sign in with Aha Labs to use free speech recognition. Your recording stays here.' : 'One Aha Labs account for Galta and our other apps. Your canvases stay on this Mac.'} />
     <div className="settings-body settings-stack">
       {notice && <p role="status" className="settings-notice">{notice}</p>}
-      <Button variant="secondary" className="settings-action" disabled={Boolean(busy)} onClick={() => { setGoogleError(''); void run('google', () => account.act({ action: 'google' })) }}><GoogleMark />Continue with Google</Button>
+      {!isWebApp() && <Button variant="secondary" className="settings-action" disabled={Boolean(busy)} onClick={() => { setGoogleError(''); void run('google', () => account.act({ action: 'google' })) }}><GoogleMark />Continue with Google</Button>}
       {googleError && <p role="alert" className="settings-error">{googleError}</p>}
-      <p className="settings-or"><span>or</span></p>
+      {!isWebApp() && <p className="settings-or"><span>or</span></p>}
       <form className="settings-stack" noValidate onSubmit={event => { event.preventDefault(); if (!busy) startEmail() }}>
         <label htmlFor={`${ids}-email`} className="sr-only">Email address</label>
         <Input ref={field} id={`${ids}-email`} type="email" value={email} placeholder="you@example.com" autoComplete="email" spellCheck={false} disabled={Boolean(busy)} className="settings-field"

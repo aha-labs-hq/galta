@@ -35,6 +35,7 @@ test('a model retry stays visible after a tool completes and reports recovery, f
     const activity = process.locator('.conversation-activity').filter({ hasText: label })
     await activity.getByRole('button').click()
     await expect(activity).toContainText('Upstream timed out')
+    if (status === 'completed') await expect(activity.locator('pre')).toHaveText('Previous interruption\nUpstream timed out')
     if (status === 'inProgress') {
       await page.getByRole('button', { name: 'Stop generation', exact: true }).click()
       await expect(page.getByRole('button', { name: 'Model retry stopped', exact: true })).toBeVisible()
@@ -179,4 +180,55 @@ test('plain and malformed errors remain readable without interpreting diagnostic
       expect(await error.getByLabel('Original error').textContent()).toBe(sample.text)
     }
   }
+})
+
+for (const width of [1000, 360]) test(`unavailable chat context offers an explicit fresh conversation at ${width}px`, async ({ page }, info) => {
+  await page.setViewportSize({ width, height: 720 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/dev/conversation-test.html')
+  await page.getByRole('textbox', { name: 'Ask Galta', exact: true }).fill('Continue the drawing')
+  await page.getByRole('button', { name: 'Send message', exact: true }).click()
+  await page.evaluate(() => (window as any).__conversationTest.set({
+    id: 'unavailable', instruction: 'Continue the drawing', status: 'failed', startedAt: 1000, completedAt: 70_000_000, completionUnobserved: true,
+    items: [{ id: 'retry', type: 'modelRetry', status: 'inProgress', text: 'Reconnecting' }, { id: 'error', type: 'error', text: 'no rollout found for thread id previous-chat' }]
+  }))
+  await expect(page.locator('.conversation-error')).toContainText('Your messages and canvas are saved.')
+  await expect(page.locator('.conversation-sheet')).not.toContainText('1166m')
+  const start = page.getByRole('button', { name: 'Start a new conversation', exact: true })
+  await expect(start).toBeInViewport()
+  await page.getByRole('textbox', { name: 'Ask Galta', exact: true }).fill('A retained draft')
+  await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeDisabled()
+  await start.focus()
+  await expect(start).toBeFocused()
+  await page.locator('.conversation-dock').screenshot({ path: info.outputPath('chat-recovery.png'), animations: 'disabled' })
+  await page.keyboard.press('Enter')
+  await expect(start).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: 'Ask Galta', exact: true })).toHaveValue('A retained draft')
+  await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeEnabled()
+})
+
+test('an occupied conversation keeps an explicit retry available', async ({ page }) => {
+  await page.goto('/dev/conversation-test.html')
+  await page.evaluate(() => (window as any).__conversationTest.set({
+    id: 'occupied', instruction: 'Continue the drawing', status: 'failed',
+    items: [{ id: 'error', type: 'error', text: 'thread previous-chat already has an active writer' }]
+  }))
+  await page.getByRole('textbox', { name: 'Ask Galta', exact: true }).fill('Continue when the other connection finishes')
+  await expect(page.getByRole('button', { name: 'Start a new conversation', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeEnabled()
+})
+
+
+test('a recovered conversation preserves historical failures without blocking the next request', async ({ page }) => {
+  const failure = 'no rollout found for thread id previous-chat'
+  await page.goto(`/dev/conversation-test.html?recovered=1&error=${encodeURIComponent(failure)}`)
+  await page.getByRole('button', { name: 'Open conversation', exact: true }).click()
+  await expect(page.locator('.conversation-error')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Start a new conversation', exact: true })).toHaveCount(0)
+  await page.getByRole('textbox', { name: 'Ask Galta', exact: true }).fill('Continue in the restored conversation')
+  const send = page.getByRole('button', { name: 'Send message', exact: true })
+  await expect(send).toBeEnabled()
+  await send.click()
+  await expect(page.getByRole('button', { name: 'Stop generation', exact: true })).toBeVisible()
+  await expect(page.locator('.conversation-error')).toBeVisible()
 })

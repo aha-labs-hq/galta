@@ -5,8 +5,12 @@ import type { CanvasChangeRegion } from '@galta/domain'
 import { cn } from '@/lib/utils'
 import { composerReachesCorner } from './useCanvasInsets'
 import { Unfold } from '@/components/Unfold'
+import { ConversationChoices, useConversationAnswer } from './ConversationQuestion'
 import { ConversationComposer } from './ConversationComposer'
-import { DockSurface } from './DockSurface'
+import { conversationError } from './ConversationError'
+import { Button } from '@/components/ui/button'
+import { DockSurface, type DockSurfaceMotion } from './DockSurface'
+import { ComposerMotion } from './ComposerMotion'
 import { lastRegion, narration } from './narration'
 import { LocatorContext, type CanvasLocator, type Locating } from './agentFocus'
 import { ConversationTranscript } from './ConversationTranscript'
@@ -18,7 +22,7 @@ import type { TaskState } from '../tasks/protocol'
 import './conversation.css'
 
 export { isExternalConversationLink } from './ConversationMessage'
-export type PendingQuestion = { method: string; params: Record<string, unknown>; answer: (value: unknown) => void }
+export type PendingQuestion = { id: string; method: string; params: Record<string, unknown>; answer: (value: unknown) => void | Promise<void> }
 export type ConversationDockProps = {
   /** The selected run's live task, when it exists. Its capability flags are the
    * only honest source for what the composer may offer. */
@@ -28,15 +32,18 @@ export type ConversationDockProps = {
   turns: readonly CreativeConversationTurn[]; conversation: ConversationStore
   state: AgentRunState; error: string; question: PendingQuestion | null
   command: DraftCommand; onSubmit(): void | Promise<void>; onStop(): void
+  onNewConversation?: () => void
   open: boolean; onOpen(open: boolean): void; preview: boolean
   context?: ReactNode; runtime?: ReactNode; actions?: ReactNode; disabled?: boolean; title?: string
   /** The editor may accept a draft before the task host has finished opening;
    * this gate belongs to the send action, not to the text field. */
   submitReady?: boolean
+  recording?: { busy: boolean; capturing?: boolean; attached: boolean; control: ReactNode; preview: ReactNode }
   sessionId?: string; focusRequest?: number; activity?: string | undefined
   /** Active sessions outside the selected conversation, surfaced while the dock is collapsed. */
   activeSessionCount?: number
   pressure?: ContextPressure | null
+  onRestoreRecording?: ((requestId: string, instruction: string) => Promise<void>) | undefined
   onArtifactDownload?: ArtifactDownload | undefined
   /** The canvas view's locator; absent where no canvas is mounted. */
   locator?: CanvasLocator | null | undefined
@@ -44,11 +51,12 @@ export type ConversationDockProps = {
 export function ConversationDock(props: ConversationDockProps) {
   const { state, turns, conversation, question, actions, ...composerProps } = props
   const { open } = props
+  const answer = useConversationAnswer(question)
   const observed = useSyncExternalStore(conversation.subscribe, conversation.getSnapshot)
   const liveTurn = props.external ? null : observed
   const busy = state === 'preparing' || state === 'streaming'
-  const canSteer = Boolean(props.task?.canSteer)
-  const connectionOnly = Boolean(props.connection && !busy)
+  const canSteer = Boolean(props.task?.canSteer && !props.recording?.attached)
+  const connectionOnly = Boolean(props.connection && !busy && !props.recording?.attached && !props.recording?.busy)
   const compact = connectionOnly || Boolean(props.external)
   // Cross-window snapshots arrive as fresh arrays. Share unchanged turn and
   // item identities before memoized transcript rows see them, without causing
@@ -63,6 +71,9 @@ export function ConversationDock(props: ConversationDockProps) {
   const allTurns = useMemo(() => liveTurn ? [...stableHistory.filter(turn => turn.id !== liveTurn.id), liveTurn] : stableHistory, [stableHistory, liveTurn])
   const latest = allTurns.at(-1)
   const standaloneError = props.error && !latest?.items.some(item => item.type === 'error' && item.text === props.error) ? props.error : ''
+  // A saved failure is history, not evidence that the current connection is unavailable.
+  const failure = props.error || (liveTurn?.status === 'failed' ? liveTurn.items.filter(item => item.type === 'error').at(-1)?.text : '') || ''
+  const recoveryAction = !busy && !props.external && props.onNewConversation ? conversationError(failure).action : undefined
   const resultVersion = latest ? `${latest.id}:${latest.status}:${latest.items.length}` : ''
   const seenResult = useRef(resultVersion)
   const unread = Boolean(!open && !busy && resultVersion && seenResult.current !== resultVersion)
@@ -78,7 +89,7 @@ export function ConversationDock(props: ConversationDockProps) {
   const ratio = props.pressure ? props.pressure.tokens / props.pressure.window : 0
   const contextLabel = props.pressure && ratio >= 0.6 ? `${Math.round(ratio * 100)}%` : ''
   const sheetId = useId()
-  const dock = useRef<HTMLElement>(null), composer = useRef<HTMLFormElement>(null)
+  const dock = useRef<HTMLElement>(null), composer = useRef<HTMLFormElement>(null), surfaceMotion = useRef<DockSurfaceMotion>(null)
   const [dockShift, setDockShift] = useState(0), [moveLimit, setMoveLimit] = useState(0), [dragging, setDragging] = useState(false)
   const dragStart = useRef<{ x: number; shift: number } | null>(null)
   // Submitting is what makes a request exist, so the dock reveals it here rather
@@ -144,14 +155,17 @@ export function ConversationDock(props: ConversationDockProps) {
   // changed the canvas.
   const spoken = busy ? liveTurn : unread ? latest : undefined
   const said = useMemo(() => narration(spoken, !busy), [spoken, busy])
-  return <LocatorContext.Provider value={locating}><section ref={dock} className={cn('conversation-dock group/dock absolute bottom-(--composer-bottom) left-1/2 z-(--layer-conversation) flex max-h-[calc(100%_-_var(--header-height,80px)_-_12px)] w-(--composer-width) max-w-[calc(100%_-_180px)] flex-col text-foreground @max-[620px]:max-w-[calc(100%_-_40px)]', open && !compact && 'is-open', busy && 'is-working', dragging && 'is-dragging', compact && 'connection-only')} style={{ transform: `translateX(calc(-50% + ${compact ? 0 : dockShift}px))` }} data-open={open && !compact} data-working={busy} data-dragging={dragging || undefined} aria-label={props.external ? 'Agent activity' : connectionOnly ? 'Connect an agent' : 'Agent conversation'}>
+  return <LocatorContext.Provider value={locating}><section ref={dock} className={cn('conversation-dock group/dock absolute bottom-(--composer-bottom) left-1/2 z-(--layer-conversation) flex max-h-[calc(100%_-_var(--header-height,80px)_-_12px)] w-(--composer-width) max-w-[calc(100%_-_var(--space-5)_*_2)] flex-col text-foreground', open && !compact && 'is-open', busy && 'is-working', dragging && 'is-dragging', compact && 'connection-only')} style={{ transform: `translateX(calc(-50% + ${compact ? 0 : dockShift}px))` }} data-open={open && !compact} data-working={busy} data-dragging={dragging || undefined} aria-label={props.external ? 'Agent activity' : connectionOnly ? 'Connect an agent' : 'Agent conversation'}>
     <Unfold shown={open && !compact} className="conversation-presence flex min-h-0 flex-[0_1_auto] flex-col">
-      <ConversationTranscript id={sheetId} sessionId={props.sessionId} turns={allTurns} actions={actions} title={props.title} question={question} error={standaloneError} reading={reading} onCollapse={collapse} onArtifactDownload={props.onArtifactDownload} />
+      <ConversationTranscript activity={props.activity} id={sheetId} sessionId={props.sessionId} turns={allTurns} actions={actions} title={props.title} question={question} questionContent={answer ? <ConversationChoices answer={answer} /> : undefined} error={standaloneError} reading={reading} onCollapse={collapse} onArtifactDownload={props.onArtifactDownload} onRestoreRecording={props.onRestoreRecording} />
     </Unfold>
     {/* A compact dock is a single line, not a collapsed reading surface: it must
         not reserve the transcript's column or intrinsic width, which would
         otherwise leave the activity line with no room to be read. */}
-    <ConversationComposer {...composerProps} onSubmit={submit} state={state} busy={busy} canSteer={canSteer} compact={compact} connectionOnly={connectionOnly} sheetId={sheetId} unread={unread} activityLabel={activityLabel} contextLabel={contextLabel} startedAt={liveTurn?.startedAt} dockShift={dockShift} moveLimit={moveLimit} onDragStart={onDragStart} onDrag={onDrag} onDragEnd={onDragEnd} onMoveKey={onMoveKey} formRef={composer} narration={said?.text} narrationKey={said?.key} region={lastRegion(spoken)} />
-    <DockSurface composer={composer} working={busy} />
+    {recoveryAction && <div className="px-4 py-3"><Button variant="secondary" size="sm" onClick={props.onNewConversation}>Start a new conversation</Button></div>}
+    <ComposerMotion composer={composer} surface={surfaceMotion} mode={props.recording?.capturing ? 'capture' : props.recording?.attached || props.recording?.busy ? 'retained' : 'idle'}>
+    <ConversationComposer {...composerProps} answer={answer} onSubmit={submit} submitReady={props.submitReady !== false && recoveryAction !== 'new-conversation'} state={state} busy={busy} canSteer={canSteer} compact={compact} connectionOnly={connectionOnly} sheetId={sheetId} unread={unread} activityLabel={activityLabel} contextLabel={contextLabel} startedAt={liveTurn?.startedAt} dockShift={dockShift} moveLimit={moveLimit} onDragStart={onDragStart} onDrag={onDrag} onDragEnd={onDragEnd} onMoveKey={onMoveKey} formRef={composer} narration={said?.text} narrationKey={said?.key} region={lastRegion(spoken)} />
+    <DockSurface composer={composer} working={busy} motion={surfaceMotion} />
+    </ComposerMotion>
   </section></LocatorContext.Provider>
 }

@@ -54,22 +54,29 @@ test('capsule grouping preserves nested groups, bound text, native undo and dele
 test('exact programmatic pointers only mark complete groups and PNG includes a selected container’s bound text', async ({ page }) => {
   await page.goto('/dev/scene-test.html')
   await page.waitForFunction(() => Boolean((window as any).engineTest))
-  const result = await page.evaluate(async () => {
-    const w = window as any, scene = w.scene
+  await page.evaluate(async () => {
+    const w = window as any
     await w.engineTest.tool('canvas_edit', { revision: w.engineTest.revision(), operations: [
       { type: 'create_element', id: 'card', elementType: 'rectangle', x: 200, y: 200, props: { width: 260, height: 180, strokeColor: '#252525', groupIds: ['inner', 'outer'] } },
       { type: 'create_text', id: 'caption', x: 220, y: 230, text: 'Keep this label', props: { strokeColor: '#ff0000', fontSize: 32, groupIds: ['inner', 'outer'] } },
       { type: 'bind_text', elementId: 'caption', containerId: 'card' },
       { type: 'create_element', id: 'sibling', elementType: 'ellipse', x: 500, y: 200, props: { width: 100, height: 100, groupIds: ['outer'] } }
     ] })
-    const select = async (ids: string[]) => {
-      scene.select(ids); await new Promise(requestAnimationFrame)
-      const state = scene.api.getAppState()
+  })
+  const select = async (ids: string[], groups: string[]) => {
+    await page.evaluate(ids => (window as any).scene.select(ids), ids)
+    // React may commit after the next animation frame. Observe the state the
+    // user receives, rather than assuming one frame completes the update.
+    await expect.poll(() => page.evaluate(() => {
+      const state = (window as any).scene.api.getAppState()
       return { ids: Object.keys(state.selectedElementIds).filter(id => state.selectedElementIds[id]), groups: Object.keys(state.selectedGroupIds).filter(id => state.selectedGroupIds[id]) }
-    }
-    const whole = await select(['card', 'sibling'])
-    const partial = await select(['caption'])
-    const container = await select(['card'])
+    })).toEqual({ ids, groups })
+  }
+  await select(['card', 'sibling'], ['outer'])
+  await select(['caption'], [])
+  await select(['card'], ['inner'])
+  const red = await page.evaluate(async () => {
+    const scene = (window as any).scene
     const { exportSelection } = await import('/canvas/selectionExport.ts' as string)
     const bitmap = await createImageBitmap(await exportSelection(scene))
     const canvas = document.createElement('canvas'); canvas.width = bitmap.width; canvas.height = bitmap.height
@@ -77,13 +84,10 @@ test('exact programmatic pointers only mark complete groups and PNG includes a s
     const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
     let red = 0
     for (let i = 0; i < pixels.length; i += 4) if (pixels[i]! > 200 && pixels[i + 1]! < 30 && pixels[i + 2]! < 30 && pixels[i + 3]! > 100) red++
-    return { whole, partial, container, red, cleared: await select([]) }
+    return red
   })
-  expect(result.whole).toEqual({ ids: ['card', 'sibling'], groups: ['outer'] })
-  expect(result.partial).toEqual({ ids: ['caption'], groups: [] })
-  expect(result.container).toEqual({ ids: ['card'], groups: ['inner'] })
-  expect(result.cleared).toEqual({ ids: [], groups: [] })
-  expect(result.red, 'the exported container retains its visible red bound label').toBeGreaterThan(100)
+  await select([], [])
+  expect(red, 'the exported container retains its visible red bound label').toBeGreaterThan(100)
 })
 
 test('selection Style uses native editing and returns focus at desktop and narrow widths', async ({ page }) => {

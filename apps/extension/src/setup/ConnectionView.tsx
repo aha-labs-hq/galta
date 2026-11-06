@@ -1,3 +1,4 @@
+import { hostRuntime, hasTaskHost } from '../shared/hostRuntime'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, Check, ChevronDown, Copy, Download, LoaderCircle, Monitor, RefreshCw, SquareTerminal } from 'lucide-react'
 import type { CodexAvailability, SetupStatus } from '@galta/runtime'
@@ -40,9 +41,9 @@ export function ConnectionView(p: Props) {
     if (manual) setRechecked(true)
     if (!quiet) setChecking(true)
     try {
-      const result: SetupStatus = typeof chrome === 'undefined' || !chrome.runtime?.id
+      const result: SetupStatus = !hasTaskHost()
         ? { state: 'absent', detail: 'Open Galta in your browser extension to connect an agent.' }
-        : await chrome.runtime.sendMessage({ type: 'setup-status' })
+        : await hostRuntime()!.sendMessage({ type: 'setup-status' })
       if (id !== request.current || latest.current.view !== view) return
       setInstallation(result)
       // A canvas opened before Galta for Mac was connected registers now; following a download changes nothing for it.
@@ -70,7 +71,7 @@ export function ConnectionView(p: Props) {
   const download = async () => {
     const id = ++request.current
     try {
-      const result: SetupStatus = await chrome.runtime.sendMessage({ type: 'codex-download' })
+      const result: SetupStatus = await hostRuntime()!.sendMessage({ type: 'codex-download' })
       if (id === request.current) setInstallation(result)
     } catch { if (id === request.current) setInstallation({ state: 'unavailable', detail: 'Reload this canvas to reconnect to Galta.' }) }
   }
@@ -90,7 +91,7 @@ export function ConnectionView(p: Props) {
   const title = chat ? 'Chat in Galta' : 'Work in Codex or Claude Code'
   const description = ready ? chat ? 'You’re connected. Make something together.' : 'Your AI app is connected to this canvas.'
     : chat ? 'Use your ChatGPT account to work together, right here.' : 'Chat there. See changes on your canvas.'
-  const preview = typeof chrome === 'undefined' || !chrome.runtime?.id
+  const preview = !hasTaskHost()
   const signIn = async () => { setWaitingForLogin(true); await p.onSignIn() }
   const copy = async () => {
     if (!instructions) return
@@ -110,7 +111,7 @@ export function ConnectionView(p: Props) {
       : `Your Codex ${codexStep.version} is older than Galta supports. Update it, or let Galta download its own (${megabytes(codexStep.download.bytes)}).`
     : `Chat in Galta runs on Codex, OpenAI’s agent. Galta uses yours when you have it, or downloads it for you (${megabytes(codexStep.download.bytes)}).`
   else if (chat && waitingForLogin) instruction = 'Finish signing in in the opened window. Your canvas can stay open.'
-  else if (chat && localReady) instruction = 'Sign in to start a conversation on this canvas.'
+  else if (chat && localReady) instruction = 'Sign in with your ChatGPT account. Conversations you start here stay in Galta, separate from the Codex app.'
   else if (localReady) instruction = instructions ? copied ? 'Paste into your AI app and follow its guidance to connect this canvas.' : 'Copy the instructions, then paste them into your AI app.'
     : 'In Galta for Mac, open “Other AI apps & updates” to get your connection configuration.'
   else if (canvasProblem) instruction = canvasProblem

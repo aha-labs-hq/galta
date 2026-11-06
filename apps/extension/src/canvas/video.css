@@ -1,5 +1,8 @@
 @reference "../styles.css";
 
+/* Camera movement changes the wrapper's transform. Keep each visible video's
+   rasterized poster and controls available for composition between frames. */
+.excalidraw .excalidraw__embeddable-container:has(.canvas-video) { will-change: transform; }
 .excalidraw .canvas-video { position: relative; width: 100%; height: 100%; overflow: hidden; container-type: inline-size; background: var(--graphite-base); color: var(--graphite-foreground); }
 .canvas-video > video, .canvas-video > img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .canvas-video > video:focus-visible { outline: var(--focus-width) solid var(--graphite-foreground); outline-offset: calc(var(--space-1) * -1); }

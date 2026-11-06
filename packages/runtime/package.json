@@ -6,5 +6,5 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "dependencies": { "@galta/domain": "workspace:*", "@galta/canvas": "workspace:*" }
+  "dependencies": { "@galta/domain": "workspace:*", "@galta/canvas": "workspace:*", "@galta/capture": "workspace:*" }
 }

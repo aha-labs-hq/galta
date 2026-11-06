@@ -168,7 +168,8 @@ test('model settings keep Effort compact and small marks readable on the dark co
     const suffix = size.width === 1000 ? '' : `-${size.width}`
     await page.screenshot({ path: info.outputPath(`runtime-composer-dark${suffix}.png`), clip, animations: 'disabled' })
     await input.fill('')
-    await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Send message', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Record a request', exact: true })).toBeEnabled()
     await page.screenshot({ path: info.outputPath(`runtime-composer-idle${suffix}.png`), clip, animations: 'disabled' })
     await input.fill(draft)
   }

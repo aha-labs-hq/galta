@@ -3,7 +3,7 @@ import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { VIDEO_LINK, normalizeAsset, normalizeAssets, AssetURLs, type CanvasAssets } from '@galta/canvas'
 import { videoData, editorFiles } from './video'
-import { inRegion, type CanvasRegion } from './observation'
+import { elementBounds, inRegion, type CanvasRegion } from './observation'
 import { refreshRelationships } from './relationships'
 import { normalizeFreeDraw } from './freeDraw'
 import { InkPresentation } from './inkPen'
@@ -108,6 +108,10 @@ export class CanvasScene {
   }
   get elements() { return this.artwork(this.api.getSceneElements()) }
   get visibleElements() { return inRegion(this.elements, this.surface) }
+  visibleGeometry(limit: number) {
+    const visible = this.visibleElements
+    return { ids: visible.map(element => element.id), objects: visible.slice(0, limit).map(element => ({ id: element.id, bounds: elementBounds(element) })) }
+  }
   get selectedIds() { return Object.keys(this.api.getAppState().selectedElementIds).filter(id => this.api.getAppState().selectedElementIds[id] && !this.isGuideElement(id)) }
   get selected() { const ids = new Set(this.selectedIds); return this.elements.filter(el => ids.has(el.id)) }
   get files() { return this.api.getFiles() }
@@ -337,7 +341,7 @@ export class CanvasScene {
       })
     }, delay)
   }
-  async preview(selectedIds: readonly string[] = this.selectedIds, detail: 'low' | 'high' = 'low', region?: CanvasRegion, unrendered?: string[], overlay?: PreviewOverlay): Promise<Blob | undefined> {
-    return renderToolPreview(this.elements, this.files, this.api.getAppState(), selectedIds, detail, region, unrendered, overlay)
+  async preview(selectedIds: readonly string[] = this.selectedIds, detail: 'low' | 'high' = 'low', region?: CanvasRegion, unrendered?: string[], overlay?: PreviewOverlay, signal?: AbortSignal): Promise<Blob | undefined> {
+    return renderToolPreview(this.elements, this.files, this.api.getAppState(), selectedIds, detail, region, unrendered, overlay, signal)
   }
 }

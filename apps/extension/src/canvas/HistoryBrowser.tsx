@@ -138,7 +138,7 @@ export function HistoryBrowser({ workspace, currentId, title, disabled, onOpen, 
     return elementBounds(changes.map(change => after.get(change.id) ?? before.get(change.id)).filter(Boolean))
   }, [version, previous, changes])
   const summary = summarizeChanges(changes)
-  const titleOf = (m: Moment) => m.source === 'agent' ? (m.turn ? `“${m.turn.instruction.replace(/\s+/g, ' ').trim()}”` : 'Edited by Galta')
+  const titleOf = (m: Moment) => m.source === 'agent' ? (m.turn ? (m.turn.instruction.trim() ? `“${m.turn.instruction.replace(/\s+/g, ' ').trim()}”` : 'Recorded request') : 'Edited by Galta')
     : !doc(m.id) ? 'This moment can’t be shown'
     : m.source === 'start' ? (doc(m.id)!.elements.some(element => !element.isDeleted) ? 'Start' : 'Empty canvas')
     : m.restored && !changes.length ? `Went back to ${m.parent ? `${dayLabel(moments!.byId.get(m.parent)!.end)}, ${clockLabel(moments!.byId.get(m.parent)!.end)}` : 'the start'}`
@@ -153,7 +153,7 @@ export function HistoryBrowser({ workspace, currentId, title, disabled, onOpen, 
   const timelines = useMemo(() => moments ? [moments.byId.get(moments.current)!, ...[...moments.byId.values()]
     .filter(m => !m.children.length && m.id !== moments.current).sort((a, b) => b.end - a.end)]
     .map(m => ({ id: m.id, when: `${dayLabel(m.end)}, ${clockLabel(m.end)}`, label: m.id === moments.current ? 'Current canvas' : m.name
-      ?? (m.turn ? `“${m.turn.instruction.replace(/\s+/g, ' ').trim()}”` : doc(m.id) ? summarizeChanges(documentChanges(doc(m.parent), doc(m.id)!)) : 'This moment can’t be shown') })) : [], [moments, view.snapshots])
+      ?? (m.turn ? (m.turn.instruction.trim() ? `“${m.turn.instruction.replace(/\s+/g, ' ').trim()}”` : 'Recorded request') : doc(m.id) ? summarizeChanges(documentChanges(doc(m.parent), doc(m.id)!)) : 'This moment can’t be shown') })) : [], [moments, view.snapshots])
   const bringBackCount = useMemo(() => {
     if (!open || !target || !current) return 0
     const document = doc(target)

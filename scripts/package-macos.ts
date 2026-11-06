@@ -2,7 +2,7 @@
 import { copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { COMPANION_PROTOCOL } from '../packages/runtime/src/lifecycle'
-import { checksum, runtimeBundle, runtimeBundleIdentifier, runtimeExecutable, type Release } from '../native/companion/release'
+import { checksum, speechBundle, runtimeBundle, runtimeBundleIdentifier, runtimeExecutable, type Release } from '../native/companion/release'
 import { minimumMacOS, root, run, validateDistribution, type Distribution } from './distribution/config'
 import { prepareDependencies } from './distribution/dependencies'
 import { createAppcast } from './distribution/appcast'
@@ -75,6 +75,15 @@ try {
     const launcher = join(resources, `galta-${name}`)
     await writeFile(launcher, `#!/bin/sh\nset -eu\nGALTARELEASE="$(CDPATH= cd -P -- "$(dirname -- "$0")/.." && pwd -P)"\nexport GALTA_RELEASE_DIRECTORY="$GALTARELEASE"\nexport GALTA_MCP_BIN="$GALTARELEASE/Resources/galta-mcp"\nexec "$GALTARELEASE/${runtimeExecutable}" ${role} "$@"\n`, { mode: 0o755 })
   }
+  // A Launch Services helper owns Speech permission independently of the
+  // browser that started native messaging. Direct child spawning inherits the
+  // browser's TCC identity and can abort before displaying the consent prompt.
+  const speechApp = join(contents, speechBundle), speechContents = join(speechApp, 'Contents')
+  await mkdir(join(speechContents, 'MacOS'), { recursive: true })
+  const speechSources = (await Array.fromAsync(new Bun.Glob('native/speech/*.swift').scan({ cwd: root }))).sort()
+  run(['/usr/bin/swiftc', '-parse-as-library', '-O', '-warnings-as-errors', '-target', `arm64-apple-macosx${minimumMacOS}`, ...speechSources, '-o', join(speechContents, 'MacOS/GaltaSpeech')])
+  await writeFile(join(speechContents, 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.galta.speech${production ? '' : '.development'}</string><key>CFBundleName</key><string>Galta</string><key>CFBundleDisplayName</key><string>Galta</string><key>CFBundleExecutable</key><string>GaltaSpeech</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleVersion</key><string>${config.build}</string><key>LSUIElement</key><true/><key>LSMinimumSystemVersion</key><string>${minimumMacOS}</string><key>NSSpeechRecognitionUsageDescription</key><string>Galta uses on-device speech recognition to understand your recorded canvas request.</string></dict></plist>\n`)
+  sign(speechApp)
   const files: Record<string, string> = {}
   async function recordFiles(directory: string) {
     for (const entry of await readdir(join(runtime, directory), { withFileTypes: true })) {

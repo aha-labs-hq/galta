@@ -31,7 +31,7 @@ globalThis.fetch = async (url, init = {}) => {
   const { status = 200, body = null, token } = await route(init)
   return new Response(JSON.stringify(body), { status, headers: token ? { 'set-auth-token': token } : {} })
 }
-const { handleAccount, receiveHandoff, googleTabClosed, protectAccountStorage } = await import('../apps/extension/src/background/account.ts')
+const { handleAccount, receiveHandoff, googleTabClosed, protectAccountStorage, speechGrant } = await import('../apps/extension/src/background/account.ts')
 
 const ADA = { id: 'u1', email: 'ada@example.com', name: '', image: null }
 beforeEach(async () => {
@@ -46,6 +46,25 @@ async function signIn(user = ADA, token = 'token.signed') {
   expect(await handleAccount({ action: 'send-code', email: ' Ada@Example.com ' })).toMatchObject({ ok: true })
   return handleAccount({ action: 'verify-code', email: 'ada@example.com', code: '123456' })
 }
+
+test('speech authorization reuses the account session but returns only a scoped grant', async () => {
+  const input = { id: crypto.randomUUID(), digest: 'a'.repeat(64) }
+  expect(await speechGrant(input)).toMatchObject({ ok: false, code: 'sign_in' })
+  expect(calls).toHaveLength(0)
+  await signIn()
+  routes['/v1/authorize'] = init => {
+    expect(init.headers.Authorization).toBe('Bearer token.signed')
+    expect(JSON.parse(init.body)).toEqual(input)
+    return { body: { ok: true, token: 'b'.repeat(64), expiresAt: Date.now() + 120000 } }
+  }
+  const grant = await speechGrant(input)
+  expect(grant).toMatchObject({ ok: true, token: 'b'.repeat(64) })
+  expect(JSON.stringify(grant)).not.toContain('token.signed')
+  expect(local['galta.account'].token).toBe('token.signed')
+  routes['/v1/authorize'] = () => ({ status: 401, body: { ok: false, code: 'sign_in', error: 'Expired' } })
+  expect(await speechGrant(input)).toMatchObject({ ok: false, code: 'sign_in' })
+  expect(local['galta.account']).toEqual({ ended: true })
+})
 
 test('content scripts cannot read the session: local storage is for trusted contexts only', async () => {
   await protectAccountStorage()

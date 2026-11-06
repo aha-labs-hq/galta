@@ -256,11 +256,15 @@ for (const width of [720, 390]) test(`packaged MV3 extension preserves HTML navi
     const bounds = await live.locator('iframe[title="HTML preview"]').boundingBox()
     await live.mouse.click(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height / 2)
     await expect(live.locator('.excalidraw__embeddable-container__inner')).toHaveCSS('pointer-events', 'all')
+    // The sandbox's input region follows the compositor commit, not the style write.
+    await live.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
     await content.getByRole('button', { name: 'Try it' }).click()
     await expect(content.getByRole('button')).toHaveText('Clicked')
     await live.mouse.click(1100, 120)
     await live.mouse.click(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height / 2)
     await expect(live.locator('.excalidraw__embeddable-container__inner')).toHaveCSS('pointer-events', 'all')
+    // The sandbox's input region follows the compositor commit, not the style write.
+    await live.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
     await expect(content.getByRole('button')).toHaveText('Clicked')
     const isolation = await content.locator('body').evaluate(() => {
       let parentBlocked = false, storageBlocked = false
@@ -381,6 +385,8 @@ for (const width of [720, 390]) test(`packaged MV3 extension preserves HTML navi
       await live.screenshot({ path: test.info().outputPath('actual-html-extension.png') })
       await live.mouse.click(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height / 2)
       await expect(live.locator('.excalidraw__embeddable-container__inner')).toHaveCSS('pointer-events', 'all')
+      // The sandbox's input region follows the compositor commit, not the style write.
+      await live.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
       await content.locator('#palette-open').click()
       await expect(content.locator('dialog#detail')).toBeVisible()
       await content.getByRole('button', { name: 'Close details', exact: true }).click()

@@ -11,6 +11,8 @@ export type Release = {
 }
 export const hostRoles = { canvas: 'canvas-bridge', codex: 'codex-bridge', companion: 'companion' } as const
 export const runtimeBundle = 'Helpers/GaltaRuntime.app'
+export const speechBundle = 'Helpers/GaltaSpeech.app'
+export const speechExecutable = `${speechBundle}/Contents/MacOS/GaltaSpeech`
 export const runtimeExecutable = `${runtimeBundle}/Contents/MacOS/galta-runtime`
 export const runtimeBundleIdentifier = (channel: Release['channel']) => `com.galta.runtime${channel === 'development' ? '.development' : ''}`
 export const runtimeExecutables = [runtimeExecutable, 'MacOS/galta-lock', 'Resources/galta-canvas-bridge', 'Resources/galta-codex-bridge', 'Resources/galta-mcp', 'Resources/galta-companion'] as const

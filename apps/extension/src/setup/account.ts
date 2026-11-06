@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ACCOUNT_KEY, GOOGLE_KEY, type AccountRequest, type AccountResponse, type AccountState } from '../shared/account'
+import { hostRuntime, hasTaskHost } from '../shared/hostRuntime'
 
 const SIGNED_OUT: AccountState = { user: null, ended: false, google: null }
 
@@ -7,9 +8,9 @@ const SIGNED_OUT: AccountState = { user: null, ended: false, google: null }
  * its state is null, never "signed out". */
 type Answer = { ok: true; state: AccountState } | { ok: false; error: string; state: AccountState | null }
 async function request(message: AccountRequest): Promise<Answer> {
-  if (typeof chrome === 'undefined' || !chrome.runtime?.id) return { ok: false, error: 'Open Galta in your browser to sign in.', state: SIGNED_OUT }
+  if (!hasTaskHost()) return { ok: false, error: 'Open Galta in your browser to sign in.', state: SIGNED_OUT }
   try {
-    const response: AccountResponse | undefined = await chrome.runtime.sendMessage({ type: 'account', request: message })
+    const response: AccountResponse | undefined = await hostRuntime()!.sendMessage({ type: 'account', request: message })
     if (response && typeof response.state === 'object' && response.state !== null) return response
   } catch { /* the background is gone, as after an extension reload */ }
   return { ok: false, error: 'Reload this canvas to reconnect to Galta.', state: null }
@@ -39,8 +40,10 @@ export function useAccount(): Account {
     const focus = () => { void refresh() }
     const storage = typeof chrome === 'undefined' ? undefined : chrome.storage?.onChanged
     storage?.addListener(changed)
+    const notification = (message: { type?: string }) => { if (message.type === 'account-changed') void refresh() }
+    hostRuntime()?.onMessage.addListener(notification)
     window.addEventListener('focus', focus)
-    return () => { storage?.removeListener(changed); window.removeEventListener('focus', focus) }
+    return () => { storage?.removeListener(changed); hostRuntime()?.onMessage.removeListener(notification); window.removeEventListener('focus', focus) }
   }, [refresh])
   const act = useCallback(async (message: Exclude<AccountRequest, { action: 'status' }>) => {
     const response = await request(message)

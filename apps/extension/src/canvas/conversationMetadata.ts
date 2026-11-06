@@ -14,7 +14,7 @@ export function requestLabel(instruction: string): string {
 /** Recognize only the placeholders emitted by older Galta versions. Never rewrite a user's name. */
 export function prepareSessionName(session: CreativeSession): CreativeSession {
   if (session.labelSource || !['Moodboard', 'New conversation'].includes(session.label) || !session.turns.length) return session
-  return { ...session, label: requestLabel(session.turns[0]!.instruction), labelSource: 'request' }
+  return { ...session, label: requestLabel(session.turns[0]!.instruction || (session.turns[0]!.context?.recording ? 'Recorded request' : '')), labelSource: 'request' }
 }
 
 export function sessionLabel(workspace: WorkspaceBundle, id: string): string {

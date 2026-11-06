@@ -1,3 +1,4 @@
+import { hostRuntime } from '../shared/hostRuntime'
 import type { CanvasArtifacts, CanvasToolScope, ToolResult } from '@galta/canvas'
 import { MAX_VIDEO_BYTES, galtaToolContract, assertGaltaToolContract } from '@galta/canvas'
 import type { ArtifactDeliveryDeclaration, ArtifactRead, ConversationArtifact } from '@galta/domain'
@@ -26,14 +27,14 @@ export class CanvasAgentConnection {
 
   async open(projectId: string, title: string) {
     if (this.port) throw new Error('Canvas connection is already open')
-    const port = chrome.runtime.connect({ name: `galta-canvas:${this.canvasId}` })
+    const port = hostRuntime()!.connect({ name: `galta-canvas:${this.canvasId}` })
     this.port = port
     port.onMessage.addListener(message => {
       if (this.port !== port) return
       void this.receive(message, port).catch(error => { if (this.port === port) this.close(String(error)) })
     })
     port.onDisconnect.addListener(() => {
-      const message = chrome.runtime.lastError?.message ?? 'Canvas bridge disconnected'
+      const message = hostRuntime()!.lastError?.message ?? 'Canvas bridge disconnected'
       if (this.port === port) this.close(message)
     })
     try { await this.rename(projectId, title) }

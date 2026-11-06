@@ -68,14 +68,60 @@ identities remain stable across edits; tool vocabulary is reviewed separately.
 ## User messages and canvas observations
 
 A submitted message carries the original words, a structured canvas observation,
-then one viewport image when rendering succeeds. That image is the only pixel
-input; when the latest observed turn in the same thread saw the same commit and
+then one viewport image when rendering succeeds. For an ordinary message, that
+image is the only pixel input; when the latest observed turn in the same thread saw the same commit and
 viewport and no compaction has happened since, the preview is `unchanged` and
 names that earlier image instead of resending it. The application reports facts; the agent interprets intent.
 An empty selection does not make a drawing irrelevant. Several selected objects
 can be a comparison, inspiration or the subject of a question. There is no input
 intent enum, recency timeout, default edit-target policy or filename-based target
 resolution. A selected native stroke needs no source file to be meaningful.
+
+A recorded request additionally carries `galta.recording-evidence/1`: at most
+eight pictures and 24 chronological moments, with each picture's world viewport,
+SHA-256 and up to 80 observed object bounds. Moments join acoustic activity,
+recognizer segment indices and up to 16 actual pointer observations. The join
+uses the original path before sampling. A stationary pointer persists until a
+new event, leave or observed camera change. Silent motion is retained too: a
+user can indicate several places before speaking. The bounded raw pointer
+sample remains in the stored evidence; the model gets moments instead of that
+redundant stream when available. Machine speech and its estimated segment times
+remain separate from any typed message. The user
+submits the recording without reviewing its machine transcript. The runtime
+asks the agent to understand the spoken request, retains confidence when provided
+and explicitly marks transcript and pointer observations as potentially wrong
+or ambiguous. Pointing indicates attention, never edit authorization or
+an automatically selected target. Pictures describe past states; the agent
+inspects the current canvas before editing. No audio track is sent to the model.
+Project identity, bounds, times and picture hashes are checked before opening a
+provider turn. The ordinary whole-canvas observation remains attached.
+
+Frame selection budgets endpoints, acoustic activity, time gaps and motion.
+Identical pixels are shared only when viewport and object evidence also match;
+their observation times remain attached. Agent-only image derivatives draw
+observed paths and number speech-linked moments. Silent motion is faint and
+unnumbered when speech is present; silent-only recordings number their moments.
+These overlays are explicitly not artwork, target counts or inferred intent.
+Original pixels remain in the recording; derivative and source hashes are
+separate. The model considers the whole sequence rather than resetting scope
+at a pause or the last pointer. Observation totals and omissions remain explicit.
+
+Recognition uses a private, lossless PCM copy with long quiet gaps shortened.
+A piecewise sample map restores original time; a segment crossing removed
+silence retains disjoint spans instead of fabricated character timestamps.
+Cloudflare Whisper is the current recognizer, with automatic language detection
+and one call per explicit Send; there is no local repair pass or silent provider
+fallback. Acoustic activity is an energy observation, not proof of speech. A
+recognizer span with no matching activity keeps a separate speech moment and its
+contemporaneous pointer: quiet speech must not disappear because the energy
+detector missed it. A coarse recognizer segment never merges separate acoustic
+moments. Unrecognized activity and unresolved timing remain explicit. Historical
+Apple `contextText`, when present, is an alternative hypothesis, not a correction.
+Submissions require audio timing metadata; older drafts without it are reprocessed
+from their media. The [speech service](../../apps/speech-worker/README.md) owns the
+current recognition and cost boundaries.
+Recorded requests use the existing task submission path. They wait for an
+active task to finish because text-only steering cannot carry their pictures.
 
 The observation identifies its saved commit and document revision, the submitted
 viewport, selected IDs, visible object geometry, and net changes since the last

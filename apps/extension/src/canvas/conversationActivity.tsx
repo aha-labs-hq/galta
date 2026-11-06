@@ -58,7 +58,7 @@ function detailParts(item: ConversationItem) {
     item.exitCode !== undefined ? `Exit code: ${item.exitCode}` : undefined, item.error,
     item.output || (item.exitCode !== undefined ? 'No output.' : undefined)].filter((part): part is string => Boolean(part))
     : [
-      item.error && !item.details?.includes(item.error) ? `Error\n${item.error}` : undefined,
+      item.error && !item.details?.includes(item.error) ? `${item.type === 'modelRetry' && item.status === 'completed' ? 'Previous interruption' : 'Error'}\n${item.error}` : undefined,
       item.details,
       item.output ? `Output\n${item.output}` : undefined,
       effect ? `Effect\n${effect}` : undefined

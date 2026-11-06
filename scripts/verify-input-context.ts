@@ -13,8 +13,8 @@ const root = resolve(import.meta.dir, '..')
 const executable = process.env.GALTA_CODEX_BIN ?? Bun.which('codex')
 if (!executable) throw new Error('Install Codex or set GALTA_CODEX_BIN')
 const directory = await mkdtemp('/tmp/galta-contract-')
-const cwd = join(directory, 'workspace'), runtimeDirectory = join(directory, 'runtime'), home = join(directory, 'codex')
-await Promise.all([mkdir(cwd), mkdir(runtimeDirectory), mkdir(home)])
+const cwd = join(directory, 'workspace'), runtimeDirectory = join(directory, 'runtime'), home = join(runtimeDirectory, 'codex')
+await Promise.all([mkdir(cwd), mkdir(home, { recursive: true })])
 const fixtureImage = async (size: number) => `data:image/png;base64,${(await readFile(join(root, `apps/extension/src/public/icons/${size}.png`))).toString('base64')}`
 const previewImage = await fixtureImage(128)
 // Global Codex memory is enabled for this home; Galta's embedded process must
@@ -39,11 +39,26 @@ function userObservation(request: any) {
   return JSON.parse(text)
 }
 const captured: any[] = [], scenarios: string[] = []
+const question = { questions: [{ id: 'character', header: 'Character', question: 'Which character?', options: [{ label: 'Original', description: 'Design a new character.' }, { label: 'Reference', description: 'Use the supplied reference.' }] }] }
+const answer = { answers: { character: { answers: ['Original'] } } }
+let asked = false, answered = false
 let scenario = "first"
 const server = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) {
   if (request.method !== 'POST') return Response.json({ data: [] })
   const body = await request.json(); captured.push(body); scenarios.push(scenario)
-  const item = { type: 'message', id: `msg_${crypto.randomUUID()}`, role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: scenario === 'naming' ? JSON.stringify({conversationTitle:'Fixture study',canvasTitle:null}) : 'Fixture response.', annotations: [] }] }
+  let item: any = { type: 'message', id: `msg_${crypto.randomUUID()}`, role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: scenario === 'naming' ? JSON.stringify({conversationTitle:'Fixture study',canvasTitle:null}) : 'Fixture response.', annotations: [] }] }
+  if (scenario === 'question') {
+    assert(JSON.stringify(body.tools).includes('request_user_input'), 'The real Default-mode model request must offer structured input')
+    if (!asked) {
+      asked = true
+      item = { type: 'function_call', id: 'fc_question', call_id: 'call_question', name: 'request_user_input', arguments: JSON.stringify(question), status: 'completed' }
+    } else {
+      const output = body.input.find((part: any) => part.type === 'function_call_output' && part.call_id === 'call_question')
+      assert(output, 'The answer must return to the same model tool call')
+      assert.deepEqual(JSON.parse(output.output), answer)
+      answered = true
+    }
+  }
   const response = { id: `resp_${crypto.randomUUID()}`, object: 'response', created_at: 1, model: 'fixture', status: 'completed', output: [item], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } }
   const events = [{ type: 'response.created', response: { ...response, status: 'in_progress', output: [] } }, { type: 'response.output_item.added', output_index: 0, item }, { type: 'response.output_item.done', output_index: 0, item }, { type: 'response.completed', response }]
   return new Response(events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } })
@@ -59,7 +74,12 @@ const deadline = setTimeout(() => { console.error('Contract verification timed o
 try {
   await client.request('initialize', { clientInfo: { name: 'galta_contract_verification', version: '1' }, capabilities: { experimentalApi: true } })
   client.notify('initialized', {})
-  const runtime = new CodexAgentRuntime({ request: (method, params) => client.request(method, params), respond: async () => { throw Error('Unexpected server request') }, subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } } })
+  // Deliberately select the local fixture rather than the host's production
+  // OpenAI transport. verify-codex-transport covers transport policy separately.
+  const localRequest = (method: string, params?: unknown) => client.request(method,
+    ['thread/start', 'thread/resume', 'thread/fork'].includes(method) ? { ...params as object, modelProvider: 'fixture' } : params)
+  const runtime = new CodexAgentRuntime({ request: localRequest,
+    respond: async (id, result, error) => { client.respond(id, result, error) }, subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } } })
   const input: any = { projectId: 'fixture', branchId: 'main', canvas: observation(), execution: { id: 'fixture/no-tool-execution', cwd }, instruction: 'Inspect the integration contract.', browser: { available: true, page: { tabId: 11, url: 'https://fixture.test/original', title: 'Original page' } }, runtime: { modelId: 'fixture', effort: 'Low', providerId: 'codex-app-server', sessionId: 'fixture', sessionLabel: 'Fixture' } }
   async function run(overrides = {}) {
     let terminal: any
@@ -152,10 +172,10 @@ try {
   assert(!sourceHistory.turns.some((turn: any) => turn.id === fork.turnId || turn.id === continuedFork.turnId), 'Branch turns must not change the original conversation')
   const forkInput = captured.at(-1).input
   assert.equal(forkInput.filter((item: any) => item.role === 'assistant').length, 2, 'Resume must send both inherited and newly completed fork replies to the model')
-  const listing = await client.request('thread/list', { limit: 100 }) as any
+  const listing = await client.request('thread/list', { limit: 100, modelProviders: [] }) as any
   assert.deepEqual(listing.data.map((thread: any) => thread.id).sort(), [first.threadId, fork.threadId].sort(), 'Following up a fork must not create a third stored conversation')
   scenario = 'naming'
-  await new CodexMetadata({request:(method,params)=>client.request(method,params),respond:async()=>{throw Error('Unexpected request')},subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}}).generate({instruction:'Name this visual study',reply:'A fixture composition.',canvasTitle:'Untitled',nameCanvas:false,cwd,model:'fixture'},new AbortController().signal)
+  await new CodexMetadata({request:localRequest,respond:async()=>{throw Error('Unexpected request')},subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}}).generate({instruction:'Name this visual study',reply:'A fixture composition.',canvasTitle:'Untitled',nameCanvas:false,cwd,model:'fixture'},new AbortController().signal)
   const everything = JSON.stringify(captured)
   assert(!everything.includes(memoryMarker), 'Global Codex memory must not reach Galta conversations')
   assert(!everything.includes('Memory Writing Agent'), 'Galta must not run the Codex memory pipeline')
@@ -175,12 +195,24 @@ try {
       inputPrefix: JSON.stringify(previous.input) === JSON.stringify(request.input.slice(0, previous.input.length)) }
   }).filter(Boolean)
   assert(cachePrefix.length > 0 && cachePrefix.every((pair: any) => pair.tools && pair.instructions && pair.inputPrefix), `Same-thread requests must keep a stable cacheable prefix: ${JSON.stringify(cachePrefix)}`)
+  scenario = 'question'
+  let prompted = 0, questionState = ''
+  const asking = await runtime.start({ ...input, instruction: 'Ask which character to draw before continuing.' }, { request: async (method, params) => {
+    assert.equal(method, 'item/tool/requestUserInput')
+    assert.deepEqual((params.questions as any[]).map(({ id, header, question, options }) => ({ id, header, question, options })), question.questions)
+    prompted++
+    return answer
+  } })
+  for await (const update of asking.updates) questionState = update.state
+  assert.equal(questionState, 'completed')
+  assert.equal(prompted, 1)
+  assert(answered, 'Default-mode structured input must resume with the selected answer')
   const observationCharacters = (captured[0].input.at(-1).content.find((part: any) => part.text?.includes(CANVAS_MESSAGE_LABEL))?.text ?? '').length
   await writeFile(join(directory,'model-requests.json'),JSON.stringify(captured))
   await writeFile(join(directory,'scenarios.json'),JSON.stringify(scenarios))
   const version = Bun.spawn([executable, '--version'], { stdout: 'pipe' })
   const codexVersion = (await new Response(version.stdout).text()).trim(); assert.equal(await version.exited, 0)
-  const receipt = { passed: true, actualAppServer: executable, codexVersion, realModel: false, actualMcpServer: true, newContinuedForked: true, forkResumedWithoutDuplication: true, forkCheckpointInclusive: true, sourceConversationPreserved: true, forkModelHistoryPreserved: true, observedMcpGuidance: true, fullCurrentMcpContract: true, separateExecutionAndPageContext: true, externalContentNotDeveloperInstructions: true, latestExecutionBinding: true, userRequestPreserved: true, requests: captured.length, compactLargeSelection: largeContext, observationOnEveryTurn: true, selectedIdentitiesUpdated: true, onlyPreviewPixelsAttached: true, unchangedPreviewWithoutPixels: true, codexMemoryIsolated: { memoryModes }, cacheOwnershipPreserved: true, cachePrefix, observationCharacters, directory }
+  const receipt = { passed: true, structuredQuestionRoundTrip: { prompted, answered, state: questionState }, actualAppServer: executable, codexVersion, realModel: false, actualMcpServer: true, newContinuedForked: true, forkResumedWithoutDuplication: true, forkCheckpointInclusive: true, sourceConversationPreserved: true, forkModelHistoryPreserved: true, observedMcpGuidance: true, fullCurrentMcpContract: true, separateExecutionAndPageContext: true, externalContentNotDeveloperInstructions: true, latestExecutionBinding: true, userRequestPreserved: true, requests: captured.length, compactLargeSelection: largeContext, observationOnEveryTurn: true, selectedIdentitiesUpdated: true, onlyPreviewPixelsAttached: true, unchangedPreviewWithoutPixels: true, codexMemoryIsolated: { memoryModes }, cacheOwnershipPreserved: true, cachePrefix, observationCharacters, directory }
   await writeFile(join(directory, 'receipt.json'), JSON.stringify(receipt, null, 2))
   console.log(JSON.stringify(receipt, null, 2))
 } catch (error) {

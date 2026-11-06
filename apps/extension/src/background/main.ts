@@ -5,8 +5,10 @@ import { attachBrowser } from './browserBridge'
 import { checkSetup, downloadCodex, isGaltaPage, mediaSettings } from './setup'
 import { attachTaskHost, ensureTaskHost } from './taskHost'
 import { addToCollection, listCollection, removeFromCollection } from './collectionStore'
-import { googleTabClosed, handleAccount, protectAccountStorage, receiveHandoff } from './account'
+import { googleTabClosed, handleAccount, protectAccountStorage, receiveHandoff, speechGrant } from './account'
+import { isSpeechGrantRequest } from '@galta/capture'
 import { hasExtensionSidePanels } from '../shared/sidePanel'
+import { attachSpeech } from './speech'
 
 // A store installation opens a canvas once, so a new user lands in Galta
 // rather than in the browser's extensions menu. Chrome Web Store installs carry
@@ -54,6 +56,7 @@ chrome.action.onClicked.addListener((tab) => {
 })
 
 chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === 'galta-speech') { attachSpeech(port); return }
   if (port.name === 'galta-task-host') attachTaskHost(port)
   if (port.name.startsWith('galta-browser:')) attachBrowser(port)
   if (port.name.startsWith('galta-canvas:')) canvasBridge.attach(port)
@@ -88,6 +91,13 @@ chrome.runtime.onMessage.addListener((message: GaltaMessage | { type: 'task-host
   if (message.type === 'account') {
     if (!isGaltaPage(sender)) { sendResponse({ ok: false, error: 'Manage your account from Galta.', state: { user: null, ended: false, google: null } }); return false }
     void handleAccount(message.request, sender.tab).then(sendResponse)
+    return true
+  }
+  if (message.type === 'speech-authorize') {
+    if (!isGaltaPage(sender) || !isSpeechGrantRequest(message.request)) {
+      sendResponse({ ok: false, code: 'invalid_request', error: 'Send recordings from Galta.' }); return false
+    }
+    void speechGrant(message.request).then(sendResponse)
     return true
   }
   if (message.type === 'setup-reconnect') { sendResponse({ ok: codexAdapter.reconnectWhenIdle() }); return false }

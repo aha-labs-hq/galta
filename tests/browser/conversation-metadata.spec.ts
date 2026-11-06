@@ -68,7 +68,7 @@ function metadataServer() {
         if (rejected?.method === method) { const error = rejected.error; rejected = undefined; return { ok: false, error } }
         let result: any = {}
         switch (method) {
-          case 'galta/config/read': result = { toolContract: await galtaToolContract() }; break
+          case 'galta/config/read': result = { toolContract: await galtaToolContract(), conversationStorage: 'galta' }; break
           case 'config/read': if (failures) throw new Error('Naming service unavailable'); result = { config: {} }; break
           case 'project/create': {
             if (!projects.has(params.idempotencyKey)) projects.set(params.idempotencyKey, { ...params, id: 'project-' + projects.size })

@@ -28,6 +28,11 @@ a selected video, native controls own playback keys, and Escape returns focus to
 the editor. Media controls distinguish downloading the original from exporting
 its poster. Replacement retains geometry and remains one-step undoable.
 
+Visible video wrappers declare their camera transform to the compositor so pan
+frames can reuse the poster and controls raster. This hint belongs to the wrapper
+that Excalidraw moves, and disappears with the culled player DOM; it does not
+keep offscreen players or decoders alive.
+
 Base64 exists only at JSON compatibility boundaries: clipboard, portable .galta
 exports and the image bridge protocol. Native video transfer uses bounded chunks
 with a source-version fence and reconstructs a Blob without a full base64 copy.

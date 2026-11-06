@@ -2,6 +2,9 @@ import { NativeMessageDecoder } from '@galta/runtime'
 
 /** Separate from the Codex transport: MCP remains usable without a Codex account. */
 export class NativeCanvasBridge {
+  constructor(private readonly transport?: Pick<typeof chrome.runtime, 'connectNative' | 'sendMessage' | 'lastError'>) {}
+  private get runtime() { return this.transport ?? chrome.runtime }
+
   private native: chrome.runtime.Port | null = null
   private readonly surfaces = new Map<string, chrome.runtime.Port>()
   private readonly requests = new Map<string, string>()
@@ -38,7 +41,7 @@ export class NativeCanvasBridge {
 
   private connect() {
     if (this.native) return this.native
-    const native = chrome.runtime.connectNative('com.galta.canvas')
+    const native = this.runtime.connectNative('com.galta.canvas')
     this.native = native
     native.onMessage.addListener(part => {
       if (this.native !== native) return
@@ -55,7 +58,7 @@ export class NativeCanvasBridge {
       } catch (error) { this.close(error instanceof Error ? error.message : String(error)) }
     })
     native.onDisconnect.addListener(() => {
-      if (this.native === native) this.close(chrome.runtime.lastError?.message ?? 'Canvas bridge disconnected')
+      if (this.native === native) this.close(this.runtime.lastError?.message ?? 'Canvas bridge disconnected')
     })
     return native
   }

@@ -1,6 +1,6 @@
 /** Read lazily, after CSS is mounted. Never duplicate theme literals in engine
  * initialization or raster exports; an absent theme is a configuration error. */
-export function themeColor(name: 'background' | 'foreground' | 'muted-foreground' | 'border-strong' | 'surface-hover' | 'mark-ink' | 'mark-paper'): string {
+export function themeColor(name: 'background' | 'foreground' | 'muted-foreground' | 'border-strong' | 'surface-hover' | 'mark-ink' | 'mark-paper' | 'recording-laser-ink' | 'recording-laser-core'): string {
   const value = getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim()
   if (!value) throw new Error(`Galta theme is missing --${name}`)
   return value

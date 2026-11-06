@@ -19,7 +19,9 @@ test('before connection the canvas invitation is independent of drawing', async 
   await expect(page.getByRole('button', { name: 'Open conversation', exact: true })).toHaveCount(0)
   await expect(page.getByRole('slider', { name: 'Move composer', exact: true })).toHaveCount(0)
   const dock = await page.locator('.conversation-dock').boundingBox()
-  expect(dock!.width).toBeLessThan(230)
+  // The compact row now owns both connection and local recording.
+  await expect(page.getByRole('button', { name: 'Record a request', exact: true })).toBeVisible()
+  expect(dock!.width).toBeLessThan(320)
   expect(dock!.height).toBeLessThanOrEqual(52)
   await page.screenshot({ path: testInfo.outputPath('composer.png') })
   await page.locator('.conversation-dock').getByRole('button', { name: 'Connect an agent', exact: true }).click()

@@ -6,10 +6,21 @@ const record = (value: unknown): Record<string, unknown> | undefined => value !=
 /** Presentation only: retain the original error in history and in details.
  * Provider envelopes describe where a request failed, not its root cause.
  */
-export function conversationError(text: string): { title: string; message: string; context: string | undefined; details: string | undefined } {
+export function conversationError(text: string): { title: string; message: string; context: string | undefined; details: string | undefined; action?: 'new-conversation' | 'retry-or-new-conversation' } {
   let envelope: Record<string, unknown> | undefined
   try { envelope = record(JSON.parse(text)) } catch { /* Plain-text errors are also valid. */ }
   const error = record(envelope?.error) ?? envelope
+  const reason = typeof error?.message === 'string' ? error.message : text
+  if (/no rollout found for thread id\b/.test(reason)) return {
+    title: 'Conversation unavailable',
+    message: 'This conversation can no longer be continued here. Your messages and canvas are saved. Start a new conversation to keep working.',
+    context: undefined, details: text, action: 'new-conversation'
+  }
+  if (/\bthread [\w-]+ already has an active writer\b/.test(reason)) return {
+    title: 'Conversation is busy',
+    message: 'This conversation is open in another chat connection. Finish there and send again, or start a new conversation on this canvas.',
+    context: undefined, details: text, action: 'retry-or-new-conversation'
+  }
   const status = error?.upstream_status ?? error?.status
   const http = typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 599 ? status : undefined
   const upstream = error?.type === 'upstream_error' || (http !== undefined && error?.upstream_status !== undefined)

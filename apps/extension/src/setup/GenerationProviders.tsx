@@ -4,12 +4,14 @@ import { MEDIA_PROVIDERS, type MediaProviderId, type MediaProviderState, type Me
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
+import { hasTaskHost, hostRuntime } from '../shared/hostRuntime'
+
 const KINDS = { image: 'Images', video: 'Video', speech: 'Speech' } as const
 
 async function request(message: MediaSettingsRequest): Promise<MediaSettingsResponse> {
-  if (typeof chrome === 'undefined' || !chrome.runtime?.id) return { ok: false, error: 'Open Galta in your browser extension to connect a provider.' }
+  if (!hasTaskHost()) return { ok: false, error: 'Connect to Galta on this Mac to manage providers.' }
   try {
-    const response: MediaSettingsResponse | undefined = await chrome.runtime.sendMessage({ type: 'media-settings', request: message })
+    const response: MediaSettingsResponse | undefined = await hostRuntime()!.sendMessage({ type: 'media-settings', request: message })
     if (response?.ok && Array.isArray(response.providers)) return response
     return response && !response.ok ? response : { ok: false, error: 'Update Galta for Mac to connect providers.' }
   } catch { return { ok: false, error: 'Reload this canvas to reconnect to Galta.' } }

@@ -1,4 +1,10 @@
 import type { CaptureId } from '@galta/domain'
+export * from './recording'
+export * from './recordingEvidence'
+export * from './recordingTimeline'
+export * from './speech'
+export * from './speechAudio'
+export * from './cloudSpeech'
 
 export type CaptureKind = 'image' | 'link' | 'selection' | 'page' | 'file'
 

@@ -153,7 +153,7 @@ collapse get an unread dot, and questions requiring an answer open it as well.
   live Excalidraw reads, validated mutations and generated image presentation;
 - image, video and speech generation with the user's own BytePlus, OpenRouter, fal or Higgsfield account, connected once in Settings and billed by the provider;
 - Codex subscription connection through a one-time native bridge, with no API key or browser-cookie reuse. On macOS Dia uses `~/Library/Application Support/Google/Chrome/NativeMessagingHosts`; see the bridge instructions for current installation and platform limits;
-- optional sign-in with the shared Aha Labs account (an emailed code or Google); it is identity only and never gates the canvas;
+- sign-in with the shared Aha Labs account (an emailed code or Google) for the shared hosted speech allowance; local canvases, recording capture, generation and agent access remain available signed out;
 - static Cloudflare Pages site for install, privacy, help, and release notes.
 
 ### Deliberately excluded

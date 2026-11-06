@@ -4,7 +4,7 @@ export type TaskControl = {
   signal: AbortSignal
   setSteer(handler: ((message: TaskSteer) => Promise<void>) | null): void
   /** Published values are immutable snapshots; serialization belongs to the transport. */
-  update(change: Partial<Pick<TaskState, 'conversation' | 'pressure' | 'error' | 'runtime' | 'slots'>>): void
+  update(change: Partial<Pick<TaskState, 'conversation' | 'pressure' | 'error' | 'runtime' | 'slots' | 'preparation' | 'needsAccount'>>): void
   request(method: string, params: Record<string, unknown>, signal: AbortSignal): Promise<unknown>
   /** What the reader can see while the task runs, as the canvas view reports
    * it. The latest report, if any, arrives at once. */
@@ -30,6 +30,7 @@ export class TaskRegistry {
     return states.length === 1 ? states[0]! : states
   }
   start(input: TaskSubmission) {
+    if (!input.instruction.trim() && !input.recording) throw new Error('A request needs text or a recording.')
     const tasks = this.tasks.get(input.projectId) ?? new Map<string, Task>()
     this.tasks.set(input.projectId, tasks)
     const previous = tasks.get(input.id)
@@ -43,7 +44,9 @@ export class TaskRegistry {
       tasks.delete(id)
     }
     const task: Task = { pending: [], state: { id: input.id, projectId: input.projectId, runtime: input.runtime, active: true, sequence: 0,
-      conversation: { id: input.id, instruction: input.instruction, status: 'preparing', startedAt: Date.now(), items: [] }, pressure: null, question: null, error: '' },
+      conversation: { id: input.id, instruction: input.instruction, status: 'preparing', startedAt: Date.now(), items: [],
+        ...(input.recording ? { context: { canvasTitle: '', selection: [...input.submitted.selection], recording: { id: input.recording.id, duration: input.recording.duration, projectId: input.projectId } } } : {}) },
+      preparation: input.recording ? 'recording' : null, pressure: null, question: null, error: '' },
       steering: new Map(), abort: new AbortController(), questions: new Map(), done: Promise.resolve() }
     tasks.set(input.id, task)
     const changed = () => { task.state = { ...task.state, sequence: task.state.sequence + 1 }; this.publish(task.state) }
@@ -75,7 +78,7 @@ export class TaskRegistry {
         // A turn that never accepted a follow-up still owes its sender an
         // answer: silence here is exactly the loss this queue exists to prevent.
         this.settleSteers(task, 'The turn ended before this follow-up could reach it.')
-        task.state = { ...task.state, active: false, canSteer: false, slots: [] }; changed()
+        task.state = { ...task.state, active: false, canSteer: false, slots: [], preparation: null }; changed()
       })
     changed()
     return structuredClone(task.state)

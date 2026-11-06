@@ -70,7 +70,8 @@ mental model rather than treating the four corners as four equal modules.
   Its return icon depicts a sidebar rather than fullscreen. The view group and
   its portals, together with document context, unmount while the narrow library
   page hides the editor. Brand and the collection toggle stay available.
-  The background is neutral light gray.
+  The background is neutral light gray. Empty-canvas guidance wraps within
+  the editing space and keeps clear of the drawing rail at narrow widths.
 - Every page sits in a browser bar, the header of the webpage card in the
   user's Tide editing study (2026-10-27): a white strip on its top edge with
   three dots, the page's file name (or else its own `<title>`) in the code face
@@ -98,6 +99,8 @@ mental model rather than treating the four corners as four equal modules.
   the inset trigger). Box selection
   and style choices share one segmented-control implementation; property groups
   use spacing, with single-line contextual headings and aligned numeric readouts.
+  Escape in an edited style value field reverts its draft and keeps the palette open;
+  with no pending edit, Escape closes the palette and restores focus to its trigger.
   The Shapes palette uses compact inline icon/name/shortcut choices. Style and
   box-selection choices rest on Glass with one flat neutral selected surface,
   without nested cards or permanent tracks.
@@ -116,12 +119,44 @@ mental model rather than treating the four corners as four equal modules.
   library's quiet vertical boundary continues through the application region.
   Zoom and Fit open from the percentage; Time Machine stays with the current canvas.
   See the [canvas chrome contract](corner-controls.md) for material and targets.
+- Recording is an input method owned by the composer. A visible **Record**
+  label and neutral ring-and-dot icon start microphone and canvas capture.
+  The same surface contracts to **REC**, a gently pulsing red dot, elapsed time,
+  **Cancel**, and **Stop** with a **↵** hint. Enter stops recording and retains
+  a draft, just like Stop; holding Enter never sends it. Cancel or Escape
+  discards the live capture and preserves typed text. An open dialog or menu
+  receives Escape first; typing and IME confirmation keep their keys. Shift+R
+  remains an optional shortcut to start. Escape does not remove
+  an already retained recording. The existing Send action is
+  the only submission path. The retained take keeps its clock, supports playback
+  and removal, and survives reload alongside editable text.
+  A small native light point leaves a smooth, tapered trail: a fine warm-red
+  line, pale core and narrow soft edge. Voice visibly refracts the artwork
+  around its head at normal zoom. Broad, soft wavefronts expand and slow down;
+  directional light keeps them legible on blank light or dark artwork, with no
+  stroked outlines or audio-bar widget.
+  Wave origins stay where they were emitted. Moving lays down a wake along the
+  observed path; a reversal does not drag old waves around with the cursor.
+  Reduced motion keeps the native point; stationary silence stops effect drawing.
+  Record and Stop share a mounted button; the take, input and footer retain
+  their identity through the transition. Layout commits once, text translates
+  without scaling, row clips reveal content, and the attached SVG outline morphs
+  without per-frame canvas layout. Interrupted motion starts from its painted
+  position. Keyboard actions and reduced motion settle immediately. Tokens own
+  all geometry and timing. Send moves the retained take into the conversation
+  as soon as the task accepts it and releases the input for the next thought.
+  While speech and evidence are prepared, the existing activity line says
+  **Preparing recording** and the task Stop remains available. Failure or Stop
+  keeps the original playable and available through **Restore recording**. There is no setup, language
+  selector or transcript editor. The recording contract
+  owns the lifecycle and implementation boundaries.
 - The composer's footer groups the conversation status trigger, model with Effort,
   and one action target. The trigger opens the reading surface; its header owns the
   direct session picker, New conversation icon and down-chevron collapse action.
   A running turn shows Stop without a draft; a follow-up draft keeps the same
   Send message action while the transport accepts it internally. Model owns a radio list, Effort choices and connection
-  state in one popover above the input. It shares the conversation's Glass material;
+  state in one popover anchored to the whole composer above the input, independent
+  of the footer's recording layout. It shares the conversation's Glass material;
   model choices sit directly on that surface. The provider mark appears once
   before Codex and its plan in the account row. A leading check and slightly stronger ink
   identify the current model. Effort is a quiet row with its
@@ -161,6 +196,15 @@ mental model rather than treating the four corners as four equal modules.
   of the request.
   There is no separate Conversation pill. Completed tool actions and ongoing
   activity are distinct; an ongoing action is not repeated below itself.
+- A structured question does not force the conversation open. Collapsed, its
+  short prompt and answer buttons sit in the composer; expanded, the reading
+  surface shows the full prompt and option descriptions. The same composer
+  accepts a custom answer in either state without replacing the message draft.
+  Choosing an option answers that question immediately. Multiple questions
+  advance one at a time and allow going back before the complete answer is
+  sent. No option is submitted by default. Sending is latched until the task
+  host acknowledges it; a failed acknowledgement preserves the answer.
+  Ordinary Markdown lists are never interpreted as interactive questions.
 - Settings is one 400 px Glass dialog over the canvas, opened from the
   bottom-left corner (see the [canvas chrome contract](corner-controls.md)).
   One grammar serves every view (`setup/settings.css`, `SettingsParts.tsx`):
@@ -212,6 +256,10 @@ mental model rather than treating the four corners as four equal modules.
     stack: the last one clears in the first 40% of `--motion-disclosure` while
     the next slides 24 px and appears from 35% to 75%, so text never overlaps,
     and the dialog's height follows its content throughout.
+  Signed-out speech submission opens this existing Account view with a brief
+  explanation that free speech recognition uses the account. The local recording
+  stays in the composer; sign-in never auto-sends it. Already signed-in users see
+  no extra prompt or verification widget. Local capture does not require sign-in.
   The Account view signs in to the shared Aha Labs account with Google or an
   emailed code, names the person, signs out and deletes the account after a
   fresh code. Signing in or out in one Galta page updates every open one.

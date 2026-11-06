@@ -16,6 +16,7 @@ import './settings.css'
 type Props = {
   view: SettingsView; onViewChange(view: SettingsView): void
   account: Account
+  accountPurpose?: 'speech' | undefined
   canvasId: string | undefined; canvasProblem: string | null; onCheckCanvas(): void; externalConnected: boolean
   status: CodexStatus; plan: string; error: string | null; onConnect(): Promise<void>; onSignIn(): Promise<void>
 }
@@ -40,7 +41,7 @@ export function SettingsDialog(p: Props) {
     : p.status === 'connecting' ? 'Connecting…' : p.status === 'sign-in-required' ? 'Sign in' : p.status === 'error' ? 'Needs attention' : 'Set up'
 
   let content: ReactNode
-  if (p.view === 'account') content = <AccountView account={p.account} onBack={toSettings} />
+  if (p.view === 'account') content = <AccountView account={p.account} purpose={p.accountPurpose} onBack={toSettings} />
   else if (p.view === 'connect' || p.view === 'chat') content = <ConnectionView view={p.view} onViewChange={p.onViewChange} onClose={close} canvasId={p.canvasId} canvasProblem={p.canvasProblem} onCheckCanvas={p.onCheckCanvas} externalConnected={p.externalConnected} status={p.status} error={p.error} onConnect={p.onConnect} onSignIn={p.onSignIn} />
   else if (p.view === 'generation') content = <>
     <ViewHeader back={{ label: 'Settings', onClick: toSettings }} title="Generation" description="Prompts and reference media go to the provider you connect, which bills you. Keys stay on this Mac." />

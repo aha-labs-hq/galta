@@ -121,6 +121,10 @@ itself as failed.
 External MCP leases still bind to their selected visible canvas, and unfinished
 imports still block view handoff. Installed-extension lifecycle acceptance is
 covered by `scripts/verify-background-tasks.ts`, separately from preview fixtures.
+`scripts/verify-recording-send.ts` exercises real offscreen audio decoding and
+evidence preparation with synthetic speech, including closing the submitting view.
+The task owns its Codex transport before configuration or thread preparation,
+until terminal cleanup; no visible page is needed to keep that connection alive.
 The visible workspace owns one Codex RPC client across project navigation;
 project components subscribe without disposing that shared connection.
 
@@ -155,6 +159,17 @@ finalization; conversation hydration cannot erase recovery's completed state.
 Recovery also settles locally started records whose provider status is terminal
 but whose completedAt receipt is missing; provider completion precedes Galta's
 final delivery and persistence boundary.
+Recovery retains saved tool receipts and artwork. A recovered turn records
+`completionUnobserved` alongside its settlement timestamp: the UI omits its
+elapsed duration because discovery time cannot establish execution time.
+Live host loss uses the same projection, rejects pending observer commands even
+while the host is opening, and retires the old observation channel so late state
+cannot revive interrupted work. The next explicit command can open a replacement
+host without replaying work.
+The chat adapter bounds explicit and detached cancellation and pending lifecycle RPCs,
+retiring the actual transport when its ownership cannot be settled. Private
+chat state and legacy conversations are owned by the
+[Codex adapter contract](agents/codex.md#private-chat-state).
 
 ### Source and import
 
@@ -887,6 +902,70 @@ complete.
 rows on a light reading surface above the bottom-attached charcoal input.
 Tailwind owns this layout and styling; shadcn Button, Textarea, Tooltip and
 Collapsible own controls. Dedicated composer CSS only draws the concave shoulders.
+
+Recorded requests start from this same composer. `CanvasRecording` owns a
+bounded canvas video, microphone audio, monotonic clock, world-coordinate
+pointer observations and evidence pictures. `useRecording` owns start, finish,
+cancel and local submission; the current Record action requires a microphone and
+reports missing-device or permission errors without starting capture. `CanvasScene`
+remains the editor boundary. Finishing
+first persists the original as an unsent draft. Explicit Send freezes the text and
+canvas context, retains the original locally and submits its small reference to
+the existing task host. Acceptance immediately puts the recording in the conversation
+and releases the composer. The task then uploads audio only to the Cloudflare speech
+Worker and prepares the timed evidence before invoking the agent. The same task Stop
+cancels preparation; failure or Stop leaves a playable original with explicit Restore.
+A successful transcript is saved with that original so retrying a later agent failure
+does not transcribe again. A short-lived browser worker prepares mono
+PCM and conservative quiet-gap compaction with an exact source-sample map.
+Whisper detects language; original acoustic activity and mapped, possibly
+disjoint word spans feed the existing evidence timeline. See
+[the speech service](../apps/speech-worker/README.md) for its limits and rollout.
+Evidence sampling retains one picture keyed by the immutable document, camera,
+viewport dimensions and background. An unchanged view gets a fresh observation
+timestamp with the same pixels and geometry; artwork or view changes invalidate
+it. Video and pointer clocks remain independent. Native tool previews freeze
+their source before awaiting, then use the existing cooperative export checkpoints
+to let input run during brush preparation. Cancelling recording aborts that work
+and releases its cached picture; stopping retains an already-started sample.
+Recognition remains internal evidence; it never becomes user-authored text.
+Stop, Enter, capture limits and source interruptions retain an unsent draft.
+Cancel and Escape discard the current capture; removing a retained recording preserves
+the written instruction. Sending always requires an explicit action. Cloudflare
+is the only default recognizer, with no language selector, model download or
+silent provider fallback. Offline, deadline, quota and malformed-response
+failures retain the sent original for explicit Restore and retry. Previously saved Apple
+transcripts remain readable; the native speech protocol stays available to older
+extension clients during the runtime compatibility window. The optional local
+web entry (`bun run web:dev`) binds the same application to a loopback host through
+`shared/hostRuntime`, using the existing native Codex and canvas adapters. It
+needs no Apple speech helper. It owns isolated working directories and a hidden
+same-origin task frame under a Web Lock. Disconnecting releases the lock and
+removes its task frame; a stale tab cannot advertise a usable executor. Native
+ports close their input first and wait for adapter cleanup before a bounded
+forced shutdown. The preview signs in explicitly with `bun run web:login` and
+keeps its conversations in its own runtime directory. It requires that tab to remain open;
+the extension's offscreen lifetime is unchanged. There is no browser API shim
+or alternate canvas/agent implementation. Sending uses the ordinary task
+service and runtime, with bounded evidence from `packages/capture`; it never
+starts an alternate agent session or silently falls back to another recognizer. The local web host also routes
+Generation settings to the same native media settings service and Mac key store
+as the extension. Provider changes refresh the idle adapter's tool catalogue;
+keys never enter browser persistence or settings responses. The route uses the
+existing loopback origin and capability-checked runtime connection.
+
+`galta-message-drafts` version 4 keeps text, unsent recording Blobs and sent
+originals in separate stores. Typing does not rewrite the media. A draft is
+scoped to project and conversation; a sent original is scoped to project and
+request. Sending waits for successful draft persistence and retains the original
+before dispatch. Only an acknowledged submission clears the matching draft;
+later user edits survive. Recording originals remain playable in the transcript
+and are removed when the canvas is deleted. They are local to this browser and
+are not included in canvas export or duplication. Capture is limited to 60
+seconds; switching project or conversation requires finishing or cancelling.
+An active recording lost to process termination cannot be recovered; a completed,
+saved draft can. See recording proposal.
+
 Composer context appears only for a selection (`N selected`) or an unavailable
 submitted webpage. Default canvas and source-domain labels are omitted;
 source-page observation and task binding remain automatic.
@@ -955,6 +1034,15 @@ tool requests and interrupts the turn, including a close during scheduling.
 Concurrent requests for that same thread are rejected. This is run ownership,
 separate from the canvas bridge's cross-window document execution lease.
 
+Codex also holds a process-wide writer lock while a thread is loaded, even when
+idle. `CodexAgentRuntime` unsubscribes its successfully acquired thread after an
+authoritative terminal event or a failure before a turn starts, before releasing
+the RPC subscription. A failed resume never unsubscribes another owner's thread.
+An external writer conflict stays visible and preserves the request; Galta does
+not take over, fork or replay it automatically. Recorded requests accepted by the
+local task service keep their original media and can be restored to an empty
+composer after a provider failure.
+
 The native host starts the installed `codex app-server --stdio`, translates
 framing and transports artifacts. It opens a project-specific directory under
 the platform-native Galta data root's `workspaces/<project-hash>` directory.
@@ -994,22 +1082,31 @@ manifest have been removed.
 ### Aha Labs account
 
 Galta signs in with an Aha Labs account, the one account shared by Aha Labs
-apps. It is optional identity and nothing else: it holds no canvas, gates no
-feature, and every canvas works signed out and offline.
+apps. Local canvases, recording capture, generation and agent access work signed
+out. The shared hosted speech allowance is account-backed: Send obtains an
+audio-bound, single-use capability through the existing account host. Missing or
+expired sign-in opens the Account view and preserves the draft; signing in never
+automatically submits it. The speech Worker owns admission counters, not the
+identity service. `apps/speech-worker/README.md` owns this contract.
 
 - The service is its own project, `aha-labs-hq/account`, at
   `https://account.ahalabs.site`; its README is the contract Galta follows.
-  Galta is a client listed there by extension id. Only the main checkout's
-  unpacked id (`oocbicpnofichiglihkbmpkjegiakhgg`) is listed today; a release
-  build's id (from `extensionPublicKey`) must be added to the service's
-  `EXTENSIONS` before release, or its Google sign-in and requests are refused.
+  Galta is a client listed there by extension id. Its development and public
+  store IDs are registered in the service's `EXTENSIONS`; check that registry
+  before changing distribution IDs. Google handoff is extension-specific.
 - `shared/account.ts` holds Galta's copy of that contract: the origin, paths,
   code length and the Google handoff message.
-- `background/account.ts` owns this browser's session. It keeps one bearer
+- `shared/accountService.ts` owns the account lifecycle; `background/account.ts`
+  supplies Chrome storage and Google-tab operations. It keeps one bearer
   token in `chrome.storage.local`, which `protectAccountStorage` limits to
   trusted contexts so content scripts cannot read it, and calls the service
   without cookies. Pages ask it through `{ type: 'account' }` messages and
   follow storage changes, so every open Galta page shows the same person.
+- Only that host exchanges the bearer for a short-lived speech capability;
+  the recording page never receives the account token. The local preview uses
+  the same lifecycle with a private 0600 session file and email-code sign-in,
+  notifying open pages through its authenticated loopback transport. Its Aha Labs
+  session is separate from `web:login`, which remains Codex sign-in.
 
 Sign-in is an emailed six-digit code (unknown addresses sign up) or Google.
 Google runs in a browser tab: `/google` starts it, and the service's

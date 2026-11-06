@@ -109,19 +109,21 @@ test('canvas installation includes MCP and refuses an incomplete payload before 
   } finally { await rm(home, { recursive: true, force: true }) }
 })
 
-test('Codex app-server starts in Galta runtime data even when the bridge inherits the checkout cwd', async () => {
+for (const cancelFails of [false, true]) for (const shutdown of ['eof', 'signal']) test(`Codex starts in private runtime data and ${shutdown} reaps an unresponsive child; reader cancellation fails: ${cancelFails}`, async () => {
   const home = await realpath(await mkdtemp(join(tmpdir(), 'galta-startup-')))
   const fakeCodex = join(home, 'codex')
   // The bridge only names the MCP executable to Codex, so a stand-in does; the
   // compiled one exists only after `bun run bridge:build`.
   const fakeMcp = join(home, 'galta-mcp')
-  let host
+  let host, serverPid
   try {
-    await writeFile(fakeCodex, `#!${process.execPath}\nprocess.stdout.write(JSON.stringify({ result: { cwd: process.cwd(), args: process.argv.slice(2) } }) + '\\n');\nfor await (const chunk of Bun.stdin.stream()) {}\n`)
+    await writeFile(fakeCodex, `#!${process.execPath}\nprocess.on('SIGTERM', () => {}); setInterval(() => {}, 1000);\nprocess.stdout.write(JSON.stringify({ result: { pid: process.pid, cwd: process.cwd(), args: process.argv.slice(2), stateHome: process.env.CODEX_HOME, sqliteHome: process.env.CODEX_SQLITE_HOME, desktopPipe: process.env.CODEX_APP_TOOLS_PIPE_PATH } }) + '\\n');\nfor await (const chunk of Bun.stdin.stream()) {}\n`)
     await chmod(fakeCodex, 0o700)
     await writeFile(fakeMcp, '#!/bin/sh\n', { mode: 0o700 })
-    host = Bun.spawn([process.execPath, join(root, 'native/adapters/codex/host.ts'), `chrome-extension://${extensionId}/`], {
-      cwd: join(root, 'native/adapters/codex'), env: { ...process.env, HOME: home, GALTA_CODEX_BIN: fakeCodex, GALTA_MCP_BIN: fakeMcp }, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe',
+    const preload = join(home, 'errored-reader.ts')
+    await writeFile(preload, `const cancel = ReadableStreamDefaultReader.prototype.cancel; ReadableStreamDefaultReader.prototype.cancel = function (...args) { return cancel.apply(this, args).then(() => { throw new Error('Reader already errored') }) }`)
+    host = Bun.spawn([process.execPath, ...(cancelFails ? ['--preload', preload] : []), join(root, 'native/adapters/codex/host.ts'), `chrome-extension://${extensionId}/`], {
+      cwd: join(root, 'native/adapters/codex'), env: { ...process.env, HOME: home, GALTA_CODEX_BIN: fakeCodex, GALTA_MCP_BIN: fakeMcp, CODEX_HOME: '/fixture-desktop', CODEX_SQLITE_HOME: '/fixture-desktop-db', CODEX_APP_TOOLS_PIPE_PATH: '/fixture-desktop.sock' }, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe',
     })
     const reader = host.stdout.getReader()
     let bytes = Buffer.alloc(0)
@@ -132,7 +134,11 @@ test('Codex app-server starts in Galta runtime data even when the bridge inherit
     }
     reader.releaseLock()
     const { result } = JSON.parse(bytes.subarray(4, bytes.readUInt32LE(0) + 4).toString())
+    serverPid = result.pid
     expect(result.cwd).toBe(join(managedRoot(home), 'runtime'))
+    expect(result.stateHome).toBe(join(managedRoot(home), 'runtime', 'codex'))
+    expect(result.sqliteHome).toBe(result.stateHome)
+    expect(result.desktopPipe).toBeUndefined()
     expect(result.args.slice(0, 2)).toEqual(['app-server', '--stdio'])
     const config = Object.fromEntries(result.args.slice(2).reduce((entries, argument, index, args) => {
       if (index % 2 === 0) {
@@ -143,6 +149,8 @@ test('Codex app-server starts in Galta runtime data even when the bridge inherit
       return entries
     }, []))
     expect(config.notify).toEqual([])
+    expect(config.sqlite_home).toBe(result.stateHome)
+    expect(config.cli_auth_credentials_store).toBe('file')
     expect(config.approval_policy).toBe('never')
     expect(config.sandbox_mode).toBe('danger-full-access')
     expect(config['apps._default.default_tools_approval_mode']).toBe('approve')
@@ -163,13 +171,15 @@ test('Codex app-server starts in Galta runtime data even when the bridge inherit
       bytes = Buffer.concat([bytes, value])
     }
     configReader.releaseLock()
-    expect(JSON.parse(bytes.subarray(4, bytes.readUInt32LE(0) + 4).toString())).toEqual({ id: 'config', result: { toolContract: await galtaToolContract() } })
+    expect(JSON.parse(bytes.subarray(4, bytes.readUInt32LE(0) + 4).toString())).toEqual({ id: 'config', result: { toolContract: await galtaToolContract(), conversationStorage: 'galta', modelProvider: 'galta_openai', modelTransport: 1 } })
     expect(await readdir(managedRoot(home))).not.toContain('workspaces')
-    host.stdin.end()
+    if (shutdown === 'signal') host.kill('SIGTERM'); else host.stdin.end()
     expect(await host.exited).toBe(0)
+    expect(() => process.kill(serverPid, 0)).toThrow('ESRCH')
   } finally {
     host?.kill()
     if (host) await host.exited
+    if (serverPid) try { process.kill(serverPid, 'SIGKILL') } catch { /* Already reaped. */ }
     await rm(home, { recursive: true, force: true })
   }
 }, 10_000)

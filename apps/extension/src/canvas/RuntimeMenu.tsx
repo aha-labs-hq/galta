@@ -100,6 +100,7 @@ type Props = {
 export function RuntimeMenu(p: Props) {
   const id = useId()
   const trigger = useRef<HTMLButtonElement>(null)
+  const anchor = useRef<HTMLFormElement>(null)
   const selectedModel = p.models.find(m => m.id === p.runtime.modelId)
   const modelLabel = selectedModel?.displayName ?? p.runtime.modelId.replace(/^gpt-/i, 'GPT-').replace(/-([a-z])/g, (_, letter: string) => ` ${letter.toUpperCase()}`)
   const models = p.models.length ? p.models : [{ id: p.runtime.modelId, displayName: modelLabel }]
@@ -108,9 +109,9 @@ export function RuntimeMenu(p: Props) {
   const planLabel = p.plan.charAt(0).toUpperCase() + p.plan.slice(1)
   const connectionLabel = p.status === 'connected' ? 'Connected to Codex' : p.status === 'connecting' ? 'Connecting to Codex' : p.status === 'sign-in-required' ? 'Sign in to Codex' : 'Codex is not connected'
   return <div className="composer-runtime shrink-0"><Popover open={p.open} onOpenChange={p.onOpen}>
-    <PopoverAnchor className="pointer-events-none absolute inset-x-0 top-0 h-0" />
+    <PopoverAnchor virtualRef={anchor} />
     <div className="runtime-controls flex items-center text-xs text-muted-foreground">
-      <Button ref={trigger} type="button" variant="ghost" size="compact" className="runtime-part runtime-model min-w-0 gap-1.5 text-inherit @max-[420px]:w-(--target-compact) group-data-[working=true]/dock:w-(--target-compact)" title={`${modelLabel} · ${effortLabel(p.runtime.effort)} · ${p.status.replaceAll('-', ' ')}`} aria-label={`Model ${modelLabel}, effort ${effortLabel(p.runtime.effort)}`} aria-haspopup="dialog" aria-expanded={p.open} aria-controls={`${id}-panel`} onClick={() => p.onOpen(!p.open)}>
+      <Button ref={element => { trigger.current = element; anchor.current = element?.closest('form') ?? null }} type="button" variant="ghost" size="compact" className="runtime-part runtime-model min-w-0 gap-1.5 text-inherit @max-[420px]:w-(--target-compact) group-data-[working=true]/dock:w-(--target-compact)" title={`${modelLabel} · ${effortLabel(p.runtime.effort)} · ${p.status.replaceAll('-', ' ')}`} aria-label={`Model ${modelLabel}, effort ${effortLabel(p.runtime.effort)}`} aria-haspopup="dialog" aria-expanded={p.open} aria-controls={`${id}-panel`} onClick={() => p.onOpen(!p.open)}>
         <AgentMark identity={`${p.runtime.modelId} ${modelLabel}`} className="runtime-trigger-model-icon" />
         <span className="inline-flex shrink-0 items-center gap-1.5 @max-[420px]:hidden group-data-[working=true]/dock:hidden"><span className="runtime-value">{modelLabel}</span><span aria-hidden="true" className="text-muted-foreground/60">/</span><span className="runtime-effort-value">{effortLabel(p.runtime.effort)}</span><ChevronDown className="size-3" /></span><i className={cn('sr-only', p.status === 'connected' ? 'is-connected' : 'is-disconnected')} role="img" aria-label={`Codex ${p.status.replaceAll('-', ' ')}`} />
       </Button>

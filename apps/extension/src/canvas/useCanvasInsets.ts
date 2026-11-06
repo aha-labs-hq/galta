@@ -1,5 +1,6 @@
 import { useLayoutEffect, type RefObject } from 'react'
 import { unfoldingHeight } from '../components/Unfold'
+import { composerMotion } from './ComposerMotion'
 import { themeLength } from '../design/theme'
 import type { CanvasFrame } from './scene'
 
@@ -55,6 +56,7 @@ export function useCanvasInsets(shell: RefObject<HTMLElement | null>, ready: boo
     const root = shell.current, composer = root?.querySelector('.conversation-composer'), header = root?.querySelector('.galta-topbar')
     const conversation = root?.querySelector('.conversation-dock'), workspace = root?.querySelector('.galta-workspace')
     if (!root || !composer || !header || !conversation || !workspace) return
+    let cornerMotion: Animation | undefined
     const measure = () => {
       const composerHeight = composer.getBoundingClientRect().height
       // The settings corner centres on the composer's footer line unless the
@@ -63,6 +65,7 @@ export function useCanvasInsets(shell: RefObject<HTMLElement | null>, ready: boo
       // The corner's right edge plus the composer's gap is published as
       // `--corner-edge`; the composer reads that value, not the corner.
       const corner = root.querySelector<HTMLElement>('.settings-corner'), area = workspace.getBoundingClientRect()
+      const cornerY = corner?.getBoundingClientRect().top
       let settingsBottom = '', edge = ''
       if (corner) {
         const cornerEdge = corner.offsetLeft + corner.offsetWidth + themeLength('--space-3')
@@ -71,8 +74,20 @@ export function useCanvasInsets(shell: RefObject<HTMLElement | null>, ready: boo
         settingsBottom = `${reaches ? composerHeight + themeLength('--space-2') : area.bottom - (line.top + line.height / 2) - corner.offsetHeight / 2}px`
         edge = `${cornerEdge}px`
       }
+      const cornerChanged = root.style.getPropertyValue('--settings-bottom') !== settingsBottom
       for (const [name, value] of [['--composer-height', `${composerHeight}px`], ['--header-height', `${header.getBoundingClientRect().height}px`], ['--settings-bottom', settingsBottom], ['--corner-edge', edge]] as const) {
         if (root.style.getPropertyValue(name) !== value) root.style.setProperty(name, value)
+      }
+      // Reservations use final layout. The corner follows the visible crown
+      // on a compositor transform, without republishing insets on every frame.
+      if (corner && cornerChanged && cornerY !== undefined) {
+        cornerMotion?.cancel()
+        const motion = composerMotion(composer), timing = motion?.effect?.getComputedTiming()
+        if (motion && timing && Number(timing.endTime) > Number(timing.localTime ?? 0)) {
+          const targetY = area.bottom - Number.parseFloat(settingsBottom) - corner.offsetHeight
+          cornerMotion = corner.animate([{ transform: `translateY(${cornerY - targetY}px)` }, { transform: 'translateY(0)' }],
+            { duration: Number(timing.endTime) - Number(timing.localTime ?? 0), easing: motion.effect!.getTiming().easing! })
+        }
       }
       const tools = root.querySelector<HTMLElement>('.drawing-dock')
       if (!tools) return
@@ -82,7 +97,7 @@ export function useCanvasInsets(shell: RefObject<HTMLElement | null>, ready: boo
       const groups = [...tools.querySelectorAll('.drawing-tool-group')]
       const fullHeight = groups.reduce((height, group) => height + group.getBoundingClientRect().height, 0) + (groups.length - 1) * gap + padding * 2
       // The dock clears both the composer and the settings corner above it.
-      const floor = Math.min(workspace.getBoundingClientRect().bottom - composerHeight, corner?.getBoundingClientRect().top ?? Infinity)
+      const floor = Math.min(workspace.getBoundingClientRect().bottom - composerHeight, corner ? area.bottom - Number.parseFloat(settingsBottom) - corner.offsetHeight : Infinity)
       const available = floor - themeLength(edgeInset) - tools.getBoundingClientRect().top
       // Pushed up by the composer, the dock's room equals its own height, so an
       // exact fit is common; half a pixel keeps sub-pixel noise from flipping it.
@@ -92,6 +107,6 @@ export function useCanvasInsets(shell: RefObject<HTMLElement | null>, ready: boo
     const observer = new ResizeObserver(measure)
     for (const input of [workspace, header, conversation]) observer.observe(input)
     measure()
-    return () => observer.disconnect()
+    return () => { observer.disconnect(); cornerMotion?.cancel() }
   }, [shell, ready])
 }

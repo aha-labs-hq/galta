@@ -1,0 +1,6 @@
+{
+  "description": "Galta speech: reject unsupported endpoints",
+  "expression": "(http.host eq \"speech.galta.art\" and not ((http.request.uri.path in {\"/v1/transcribe\" \"/v1/authorize\"} and http.request.method in {\"POST\" \"OPTIONS\"}) or (http.request.uri.path eq \"/health\" and http.request.method eq \"GET\")))",
+  "action": "block",
+  "enabled": true
+}

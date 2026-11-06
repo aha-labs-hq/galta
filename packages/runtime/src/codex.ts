@@ -2,6 +2,7 @@ import { CODEX_EXECUTION_POLICY, CODEX_THREAD_CONFIG } from './codexConfig'
 import { codexInstructions } from './codexInstructions'
 import { assertGaltaToolContract, CANVAS_MESSAGE_LABEL, canvasMessageContextSchema } from '@galta/canvas'
 import { artifactDeliveryDeclarationSchema, CANVAS_REGION_IDS, type CanvasChangeRegion } from '@galta/domain'
+import { validateRecordingEvidence, RECORDING_EVIDENCE_LABEL } from '@galta/capture'
 import type { AgentHost, AgentInput, AgentRunHandle, AgentUpdate, AgentRuntime, ConversationItem } from './index'
 export type CodexAgentInput = AgentInput & (
   | { threadId?: string; fork?: never }
@@ -10,10 +11,9 @@ export type CodexAgentInput = AgentInput & (
 export type CodexAgentUpdate = AgentUpdate & { threadId?: string; turnId?: string }
 
 export type CodexJsonRpcNotification = { id?: string | number; method: string; params?: Record<string, unknown> }
-// app-server normally follows an error with turn/completed. Keep a small
-// bounded window for that receipt, but never leave the application waiting
-// forever when a provider retry stream is orphaned.
-const CODEX_RECONNECT_GRACE_MS = 30_000
+// A non-retry error is terminal evidence. Allow its final receipts to arrive.
+// Retry timing belongs to Codex, including websocket-to-HTTP fallback; elapsed
+// time without model output is not evidence that the local connection died.
 const CODEX_TERMINAL_ERROR_GRACE_MS = 2_000
 export interface CodexRpcClient {
   request(method: string, params?: unknown): Promise<unknown>
@@ -73,7 +73,7 @@ class Queue<T> {
     return new Promise(resolve => { this.waiter = resolve })
   }
 }
-type Active = { threadId?: string; turnId?: string; completedTurnId?: string; abort: AbortController; queue: Queue<CodexJsonRpcNotification>; interruption?: Promise<void> }
+type Active = { threadId?: string; turnId?: string; startingTurn?: boolean; connectionLost?: boolean; completedTurnId?: string; abort: AbortController; queue: Queue<CodexJsonRpcNotification>; interruption?: Promise<void> }
 
 function itemLabel(raw: Record<string, any>, type: string): string {
   switch (type) {
@@ -330,6 +330,7 @@ export class CodexAgentRuntime implements AgentRuntime<CodexAgentInput, CodexAge
     if (!input.execution?.id || !input.execution.cwd) throw new Error('Acquire a Galta execution before running a command')
     if (input.canvas?.image && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(input.canvas.image.dataUrl)) throw new Error('The canvas observation must be a PNG, JPEG or WebP image')
     await validateCanvasPreview(input.canvas)
+    if (input.recording) await validateRecordingEvidence(input.recording, input.projectId)
     const runId = crypto.randomUUID()
     const current: Active = { abort: new AbortController(), queue: new Queue<CodexJsonRpcNotification>() }
     this.active.set(runId, current)
@@ -338,7 +339,6 @@ export class CodexAgentRuntime implements AgentRuntime<CodexAgentInput, CodexAge
 
   private async *run(input: CodexAgentInput, host: AgentHost, runId: string, current: Active): AsyncGenerator<CodexAgentUpdate> {
     let unsubscribe: (() => void) | undefined
-    let reconnectTimer: ReturnType<typeof setTimeout> | undefined
     let terminalErrorTimer: ReturnType<typeof setTimeout> | undefined
     const requests = new Map<string, AbortController>()
     const dismissRequests = () => {
@@ -348,36 +348,16 @@ export class CodexAgentRuntime implements AgentRuntime<CodexAgentInput, CodexAge
     try {
       yield { state: 'preparing' }
       if (current.abort.signal.aborted) { yield { state: 'stopped' }; return }
-      const settings = record(await this.rpc.request('galta/config/read'))
-      if (current.abort.signal.aborted) { yield { state: 'stopped' }; return }
-      await assertGaltaToolContract(settings?.toolContract)
-      if (current.abort.signal.aborted) { yield { state: 'stopped' }; return }
-      const instructions = codexInstructions()
-      // Thread settings are passed on resume and fork too: a thread reloaded
-      // after an app-server restart takes its configuration from the request.
-      const config = { model: input.runtime.modelId, cwd: input.execution.cwd, sandbox: CODEX_EXECUTION_POLICY.sandbox, approvalPolicy: CODEX_EXECUTION_POLICY.approvalPolicy, config: CODEX_THREAD_CONFIG }
-      // Galta's tool catalog and execution belong exclusively to MCP.
-      // Turn paging is skipped here: the conversation is reconciled separately,
-      // and resuming with full history only adds startup cost.
-      const response = record(input.fork
-        ? await this.rpc.request('thread/fork', { ...config, threadId: input.fork.threadId, lastTurnId: input.fork.lastTurnId, excludeTurns: true })
-        : input.threadId
-          ? await this.rpc.request('thread/resume', { ...config, threadId: input.threadId, excludeTurns: true })
-          : await this.rpc.request('thread/start', { ...config, ephemeral: false }))
-      const threadId = response?.thread?.id
-      if (typeof threadId !== 'string') throw new Error('Codex did not return a thread id')
-      yield { state: 'preparing', threadId }
-      if (current.abort.signal.aborted) { yield { state: 'stopped' }; return }
-      current.threadId = threadId
+      // Subscription owns the transport, including thread preparation when
+      // every canvas view has closed. Release it only after terminal cleanup.
       const { queue } = current
       unsubscribe = this.rpc.subscribe(notification => {
-        if (notification.params?.threadId !== threadId && notification.method !== 'galta/connection-lost') return
+        if (notification.method !== 'galta/connection-lost' && (!current.threadId || notification.params?.threadId !== current.threadId)) return
         // Events can arrive before the turn/start response or while the
         // consumer persists an update. Keep the terminal identity, so Stop
         // cannot interrupt a finished turn or be suppressed by an older one.
         const completedId = record(notification.params?.turn)?.id
         if (notification.method === 'turn/completed' && typeof completedId === 'string' && (!current.turnId || completedId === current.turnId)) {
-          if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = undefined }
           if (terminalErrorTimer) { clearTimeout(terminalErrorTimer); terminalErrorTimer = undefined }
           current.completedTurnId = completedId
           dismissRequests()
@@ -390,9 +370,56 @@ export class CodexAgentRuntime implements AgentRuntime<CodexAgentInput, CodexAge
           requests.get(id)?.abort(new Error('Codex resolved this request'))
           requests.delete(id)
         }
-        if (notification.method === 'galta/connection-lost') dismissRequests()
+        if (notification.method === 'galta/connection-lost') { current.connectionLost = true; dismissRequests() }
         queue.push(notification)
       })
+      const settings = record(await this.rpc.request('galta/config/read'))
+      if (current.abort.signal.aborted) { yield { state: 'stopped' }; return }
+      if (current.connectionLost) throw new Error('The connection to Codex closed during task preparation. Reconnect and submit again.')
+      await assertGaltaToolContract(settings?.toolContract)
+      if (settings?.conversationStorage !== 'galta') throw new Error('Update Galta for Mac and reconnect to keep your conversations in Galta.')
+      if (current.abort.signal.aborted) { yield { state: 'stopped' }; return }
+      const userInput = [
+        { type: 'text', text: input.instruction, text_elements: [] },
+        ...(input.canvas ? [{ type: 'text', text: `${CANVAS_MESSAGE_LABEL}\n${JSON.stringify(input.canvas.context)}`, text_elements: [] }] : []),
+        ...(input.canvas?.image ? [{ type: 'image', url: input.canvas.image.dataUrl }] : []),
+        ...(input.recording ? [{ type: 'text', text: `${RECORDING_EVIDENCE_LABEL}\n${JSON.stringify({ ...input.recording, ...(input.recording.moments?.length ? { pointers: undefined } : {}), frames: input.recording.frames.map(({ dataUrl: _, ...frame }) => frame) })}`, text_elements: [] },
+          ...input.recording.frames.flatMap(frame => [{ type: 'text', text: `Recording ${input.recording!.id}, ${frame.id}, ${frame.t.toFixed(3)} seconds.`, text_elements: [] }, { type: 'image', url: frame.dataUrl }])] : [])
+      ]
+      let modelProvider = typeof settings?.modelProvider === 'string' ? settings.modelProvider : undefined
+      if (settings?.modelTransport === 1) {
+        const transport = record(await this.rpc.request('galta/model/transport', {
+          threadId: input.fork?.threadId ?? input.threadId,
+          inputBytes: new TextEncoder().encode(JSON.stringify(userInput)).byteLength
+        }))
+        if (typeof transport?.modelProvider !== 'string') throw new Error('Galta could not prepare the model transport')
+        modelProvider = transport.modelProvider
+        if (current.abort.signal.aborted) { yield { state: 'stopped' }; return }
+        if (current.connectionLost) throw new Error('The connection to Codex closed during task preparation. Reconnect and submit again.')
+      }
+      const instructions = codexInstructions()
+      // Thread settings are passed on resume and fork too: a thread reloaded
+      // after an app-server restart takes its configuration from the request.
+      const config = { model: input.runtime.modelId,
+        // Explicitly apply the installed host's transport configuration to old
+        // threads too; resume otherwise keeps their stored provider settings.
+        ...(modelProvider ? { modelProvider } : {}),
+        cwd: input.execution.cwd, sandbox: CODEX_EXECUTION_POLICY.sandbox, approvalPolicy: CODEX_EXECUTION_POLICY.approvalPolicy, config: CODEX_THREAD_CONFIG }
+      // Galta's tool catalog and execution belong exclusively to MCP.
+      // Turn paging is skipped here: the conversation is reconciled separately,
+      // and resuming with full history only adds startup cost.
+      const response = record(input.fork
+        ? await this.rpc.request('thread/fork', { ...config, threadId: input.fork.threadId, lastTurnId: input.fork.lastTurnId, excludeTurns: true })
+        : input.threadId
+          ? await this.rpc.request('thread/resume', { ...config, threadId: input.threadId, excludeTurns: true })
+          : await this.rpc.request('thread/start', { ...config, ephemeral: false }))
+      const threadId = response?.thread?.id
+      if (typeof threadId !== 'string') throw new Error('Codex did not return a thread id')
+      current.threadId = threadId
+      yield { state: 'preparing', threadId }
+      if (current.abort.signal.aborted) { yield { state: 'stopped' }; return }
+      if (current.connectionLost) throw new Error('The connection to Codex closed during task preparation. Reconnect and submit again.')
+      current.startingTurn = true
       const turn = record(await this.rpc.request('turn/start', {
         threadId, model: input.runtime.modelId, effort: input.runtime.effort.toLowerCase(),
         // Loaded threads ignore thread/resume configuration changes. Apply the
@@ -404,12 +431,9 @@ export class CodexAgentRuntime implements AgentRuntime<CodexAgentInput, CodexAge
         // turn, including loaded and forked threads. Keep the current contract
         // out of both the user request and Codex's collaboration/base policy.
         additionalContext: { ...additionalContext(input), galta_instructions: { kind: 'application', value: instructions } },
-        input: [
-          { type: 'text', text: input.instruction, text_elements: [] },
-          ...(input.canvas ? [{ type: 'text', text: `${CANVAS_MESSAGE_LABEL}\n${JSON.stringify(input.canvas.context)}`, text_elements: [] }] : []),
-          ...(input.canvas?.image ? [{ type: 'image', url: input.canvas.image.dataUrl }] : [])
-        ]
+        input: userInput
       }))?.turn
+      current.startingTurn = false
       if (typeof turn?.id !== 'string') throw new Error('Codex did not return a turn id')
       current.turnId = turn.id
       yield { state: 'streaming', threadId, turnId: turn.id }
@@ -417,16 +441,12 @@ export class CodexAgentRuntime implements AgentRuntime<CodexAgentInput, CodexAge
       let retry: ConversationItem | undefined
       let retryCount = 0
       let turnError: string | undefined
-      const clearReconnectTimer = () => { if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = undefined } }
-      const scheduleFailure = (method: 'galta/reconnect-timeout' | 'galta/terminal-error', message: string, delay: number) => {
-        if (method === 'galta/reconnect-timeout' ? reconnectTimer : terminalErrorTimer) return
-        const timer = setTimeout(() => {
-          if (method === 'galta/reconnect-timeout') reconnectTimer = undefined
-          else terminalErrorTimer = undefined
-          queue.push({ method, params: { threadId, turnId: turn.id, message } })
-        }, delay)
-        if (method === 'galta/reconnect-timeout') reconnectTimer = timer
-        else terminalErrorTimer = timer
+      const scheduleTerminalFailure = (message: string) => {
+        if (terminalErrorTimer) return
+        terminalErrorTimer = setTimeout(() => {
+          terminalErrorTimer = undefined
+          queue.push({ method: 'galta/terminal-error', params: { threadId, turnId: turn.id, message } })
+        }, CODEX_TERMINAL_ERROR_GRACE_MS)
       }
       while (true) {
         // An interrupt acknowledgement is not completion. Drain final item
@@ -438,8 +458,7 @@ export class CodexAgentRuntime implements AgentRuntime<CodexAgentInput, CodexAge
         if (!p) continue
         const notificationTurn = p.turnId ?? record(p.turn)?.id
         if (notificationTurn && notificationTurn !== turn.id) continue
-        if (n.method === 'galta/reconnect-timeout' || n.method === 'galta/terminal-error') {
-          clearReconnectTimer()
+        if (n.method === 'galta/terminal-error') {
           if (terminalErrorTimer) { clearTimeout(terminalErrorTimer); terminalErrorTimer = undefined }
           if (retry) {
             yield { state: 'streaming', item: { ...retry, status: 'failed', error: turnError ?? String(p.message ?? 'Codex did not reconnect') } }
@@ -451,19 +470,17 @@ export class CodexAgentRuntime implements AgentRuntime<CodexAgentInput, CodexAge
           const message = String(record(p.error)?.message ?? 'Codex request failed')
           if (p.willRetry !== true) {
             turnError = message
-            scheduleFailure('galta/terminal-error', message, CODEX_TERMINAL_ERROR_GRACE_MS)
+            scheduleTerminalFailure(message)
             continue
           }
           // Codex owns retries. Project its notification without restarting the
           // turn, replaying tools, or adding another retry policy.
           retry = { id: retry?.id ?? `${turn.id}-model-retry-${++retryCount}`, type: 'modelRetry', text: 'Waiting for the model to reconnect', status: 'inProgress', error: message }
-          scheduleFailure('galta/reconnect-timeout', 'Codex did not reconnect within 30 seconds', CODEX_RECONNECT_GRACE_MS)
           yield { state: 'streaming', item: retry }; continue
         }
         const modelProgress = n.method === 'item/agentMessage/delta' || n.method === 'item/plan/delta' || n.method === 'item/reasoning/summaryTextDelta' || n.method === 'item/reasoning/summaryPartAdded' || n.method === 'item/reasoning/textDelta'
           || (n.method === 'item/started' || n.method === 'item/completed') && ['agentMessage', 'reasoning'].includes(String(record(p.item)?.type))
         if (retry && (modelProgress && !turnError || n.method === 'turn/completed')) {
-          clearReconnectTimer()
           const terminal = record(p.turn)
           const status = terminal?.status === 'failed' ? 'failed' : terminal?.status === 'interrupted' ? 'interrupted' : 'completed'
           yield { state: 'streaming', item: { ...retry, status, ...(status === 'failed' ? { error: String(record(terminal?.error)?.message ?? turnError ?? retry.error) } : {}) } }
@@ -555,8 +572,14 @@ export class CodexAgentRuntime implements AgentRuntime<CodexAgentInput, CodexAge
         }
       }
     } finally {
-      if (reconnectTimer) clearTimeout(reconnectTimer)
       if (terminalErrorTimer) clearTimeout(terminalErrorTimer)
+      // A loaded idle thread retains Codex's process-wide writer lock. Give it
+      // back after completion (or before a turn started), while the RPC port
+      // is still alive. Never unsubscribe a thread we failed to acquire, or a
+      // turn whose completion is uncertain. Cleanup cannot rewrite its result.
+      if (!current.connectionLost && current.threadId && (!current.turnId || current.completedTurnId === current.turnId)) {
+        await this.rpc.request('thread/unsubscribe', { threadId: current.threadId }).catch(() => undefined)
+      }
       dismissRequests(); unsubscribe?.(); this.active.delete(runId)
     }
   }
@@ -577,7 +600,14 @@ export class CodexAgentRuntime implements AgentRuntime<CodexAgentInput, CodexAge
   }
   private async interrupt(current: Active): Promise<void> {
     if (current.interruption) return current.interruption
-    if (!current.turnId || current.completedTurnId === current.turnId) return
+    if (!current.turnId) {
+      if (current.startingTurn && !current.completedTurnId) {
+        current.interruption = this.rpc.request('galta/turn/cancel', { threadId: current.threadId }).then(() => {})
+        return current.interruption
+      }
+      return
+    }
+    if (current.completedTurnId === current.turnId) return
     current.interruption = this.rpc.request('turn/interrupt', { threadId: current.threadId, turnId: current.turnId }).then(() => {}, error => { if (current.completedTurnId !== current.turnId) throw error })
     return current.interruption
   }

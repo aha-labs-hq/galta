@@ -17,6 +17,9 @@ import { commitWorkspaceSnapshot, makeId, workspaceRepository } from '../canvas/
 import { WorkspaceSync } from '../canvas/workspaceSync'
 import { isTaskRunning, type TaskSubmission } from './protocol'
 import type { TaskControl } from './registry'
+import { prepareSubmittedRecording } from './recording'
+import { SpeechSignInRequired } from '../recording/speech'
+import { recoverInterruptedTurn } from './recovery'
 
 export async function executeTask(input: TaskSubmission, control: TaskControl, ready: Promise<unknown> = Promise.resolve()) {
   const projectId = asProjectId(input.projectId), { update } = control
@@ -24,7 +27,7 @@ export async function executeTask(input: TaskSubmission, control: TaskControl, r
   const sync = new WorkspaceSync(projectId), runtime = new CodexAgentRuntime(new ExtensionCodexRpc())
   const browser = new SourceBrowser()
   const conversation: CreativeConversationTurn = { id: input.id, instruction: input.instruction, status: 'preparing', startedAt: Date.now(), items: [],
-    context: { canvasTitle: '', selection: [...input.submitted.selection], ...(input.page ? { page: { title: input.page.title, url: input.page.url } } : {}) } }
+    context: { canvasTitle: '', selection: [...input.submitted.selection], ...(input.recording ? { recording: { id: input.recording.id, projectId: input.projectId, duration: input.recording.duration } } : {}), ...(input.page ? { page: { title: input.page.title, url: input.page.url } } : {}) } }
   // Items are replaced by the runtime, never mutated. Copy the small index;
   // keep potentially large text/output shared until transport serialization.
   const snapshot = (): CreativeConversationTurn => ({ ...conversation, items: [...conversation.items], ...(conversation.steering ? { steering: [...conversation.steering] } : {}) })
@@ -105,6 +108,8 @@ export async function executeTask(input: TaskSubmission, control: TaskControl, r
       // The reader keeps looking while the task runs: work lands where they are.
       control.watchView(view => taskScene.view(view))
       scene = taskScene
+      const recording = await prepareSubmittedRecording(input, signal)
+      update({ preparation: null })
       await connection.open(projectId, current.project.title)
       signal.throwIfAborted()
       const acquired = await connection.acquire()
@@ -138,8 +143,9 @@ export async function executeTask(input: TaskSubmission, control: TaskControl, r
       signal.throwIfAborted()
       const handle = await runtime.start({ projectId, branchId: current.project.activeBranchId,
         canvas,
+        ...(recording ? { recording } : {}),
         browser: browserContext, execution: { id: `${lease.bridgeId}/${lease.id}`, cwd: lease.cwd },
-        instruction: input.instruction, runtime: context,
+        instruction: input.instruction || (input.recording ? 'Understand and carry out my spoken request in the attached recording. Use the timed canvas and pointer observations to resolve what I mean. Ask if the recording is unclear.' : ''), runtime: context,
         ...(session.threadId ? { threadId: session.threadId } : session.forkFrom ? { fork: session.forkFrom } : {})
       }, { request: control.request })
       runId = handle.runId
@@ -222,7 +228,7 @@ export async function executeTask(input: TaskSubmission, control: TaskControl, r
       const reason = interruptError ?? error
       const message = reason instanceof Error ? reason.message : String(reason)
       if (conversation.status === 'failed') conversation.items.push({ id: makeId('error'), type: 'error', text: message })
-      update({ error: conversation.status === 'failed' ? message : '' })
+      update({ error: conversation.status === 'failed' ? message : '', needsAccount: reason instanceof SpeechSignInRequired })
     } finally {
       finishing = true
       control.setSteer(null)
@@ -252,7 +258,8 @@ export async function recoverInterruptedTasks(projectId: string) {
   const saved = await workspaceRepository.update(asProjectId(projectId), current => {
     if (!current) throw new Error('This canvas is no longer available.')
     if (!current.agentSessions?.some(session => session.turns.some(unfinished))) return current
-    return { ...current, agentSessions: current.agentSessions.map(session => ({ ...session, turns: session.turns.map(turn => unfinished(turn) ? { ...turn, status: 'failed' as const, completedAt: Date.now(), items: [...turn.items, { id: makeId('error'), type: 'error', text: 'The background task host closed before this task finished. Saved changes are preserved.' }] } : turn) })) }
+    const now = Date.now()
+    return { ...current, agentSessions: current.agentSessions.map(session => ({ ...session, turns: session.turns.map(turn => recoverInterruptedTurn(turn, now)) })) }
   }, true)
   new WorkspaceSync(projectId).publish(saved)
 }

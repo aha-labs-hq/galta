@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import type { CanvasScene } from './scene'
 import { useCanvasVisible } from './canvasVisibility'
-import { DrawingStyle } from './DrawingStyle'
+import { DrawingStyle, retainStyleFieldOnEscape } from './DrawingStyle'
 import { DrawingChoices } from './DrawingChoices'
 import { toolShortcuts } from './canvasShortcuts'
 import './drawing-tools.css'
@@ -75,7 +75,7 @@ export function DrawingTools({ scene, onImport }: { scene: CanvasScene; onImport
         </div>
         <div className={laterGroupClass} role="group" aria-label="Appearance">
           <Popover open={styleOpen} onOpenChange={setStyleOpen}><Tooltip><TooltipTrigger asChild><PopoverTrigger asChild><Button type="button" variant="ghost" size="icon-compact" aria-label="Drawing style" className={toolButtonClass}><PaintbrushVertical /></Button></PopoverTrigger></TooltipTrigger>{visible && <TooltipContent side="right">Drawing style</TooltipContent>}</Tooltip>
-            {visible && <PopoverContent side="right" align="end" sideOffset={12} collisionPadding={8} aria-label="Drawing style" className="drawing-popover drawing-style-panel">
+            {visible && <PopoverContent side="right" align="end" sideOffset={12} collisionPadding={8} aria-label="Drawing style" className="drawing-popover drawing-style-panel" onEscapeKeyDown={retainStyleFieldOnEscape}>
               <DrawingStyle scene={scene} state={state} />
             </PopoverContent>}</Popover>
         </div>

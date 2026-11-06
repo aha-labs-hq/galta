@@ -6,12 +6,12 @@ built-in chat. External agents connect directly through Galta MCP.
 
 ## The user experience
 
-1. On first use, opening Galta starts only the independent canvas bridge. Choosing **Chat in Galta** in Settings checks the existing account; opening Settings or **Work in Codex or Claude Code** does not start or authenticate Codex. A previously enabled built-in chat reconnects on opening Galta.
+1. On first use, opening Galta starts only the independent canvas bridge. Choosing **Chat in Galta** in Settings checks Galta’s chat account; opening Settings or **Work in Codex or Claude Code** does not start or authenticate Codex. A previously enabled built-in chat reconnects on opening Galta.
 2. The composer shows the connection action when disconnected; its model menu shows the connected account and usage. There is no API-key form.
 3. The Galta Mac app installs and registers the runtime; choose **Connect browser** there. Standalone [adapter installation](../../native/adapters/codex/README.md) remains a developer workflow. A missing runtime produces an error.
 4. Once installed, the bridge starts `codex app-server` from the user's own Codex when it is at least the pinned version (`0.162.0-alpha.17.2`), found in ChatGPT for Mac, Codex for Mac or the usual CLI and npm locations. Without one, **Chat in Galta** offers **Download Codex**, which fetches that pinned official package into Galta's data directory; nothing downloads without the click. [Distribution](../distribution.md#codex-for-chat-in-galta) owns the lookup, the download and the copy kept from apps that bundled Codex.
    Galta reads `model/list` from the Codex it runs, so the user's own Codex brings its own catalog and updates with it; the pinned version's catalog includes GPT-6.1 Sol, GPT-6 Astra, Sol and Luna. The provider and account still decide which models are actually available.
-5. If the user is already signed in to Codex, Galta loads the account, the complete paginated model catalog and usage metadata. Galta checks again when the runtime menu opens, the app regains focus or resumes, a turn completes, or the reported quota window reaches its next reset. Account and usage notifications update the workspace even when the menu is closed. The menu shows the account's mark and plan, Effort, and a read-only remaining-quota meter with a tooltip identifying the current usage window. It has no refresh button. A still-available selected model is preserved; a new workspace follows the provider's default model.
+5. If the user has signed in to built-in chat in Galta, Galta loads the account, the complete paginated model catalog and usage metadata. Galta checks again when the runtime menu opens, the app regains focus or resumes, a turn completes, or the reported quota window reaches its next reset. Account and usage notifications update the workspace even when the menu is closed. The menu shows the account's mark and plan, Effort, and a read-only remaining-quota meter with a tooltip identifying the current usage window. It has no refresh button. A still-available selected model is preserved; a new workspace follows the provider's default model.
 6. If the account is missing or Codex cannot recover an invalid credential, Galta offers `Sign in with ChatGPT` and removes the previous account and quota from view. Only clicking the sign-in action starts authorization. Recovering the account never submits a draft or replays a failed turn.
 7. Sign-in opens the official authorization URL in one centered 480 × 720 browser popup, bounded by the original window's dimensions. Repeated clicks focus the same popup. The source page and canvas remain in the original window.
 8. Closing the popup cancels that login attempt. A successful notification must match its login ID before Galta closes the popup and focuses the original window. The flow also handles success arriving before popup creation has finished. Failed or unrelated notifications do not close other windows.
@@ -22,6 +22,39 @@ The user never copies a token into Galta. The Codex process owns OAuth storage a
 A ChatGPT browser session and the local Codex authorization have separate
 lifecycles. Being signed in on chatgpt.com does not make a revoked local Codex
 credential valid; account recovery follows the app-server's authentication state.
+
+## Private chat state
+
+Built-in chat uses `<data root>/runtime/codex` as its persistent `CODEX_HOME` and
+SQLite directory. The launcher overrides both locations, retains platform network
+configuration, and removes inherited desktop session/connection and provider-auth
+environment variables. It never reads or changes the desktop home. Codex owns
+login and refresh inside this private directory (`cli_auth_credentials_store=file`).
+First use requires **Sign in with ChatGPT** in Galta, even if the desktop app is
+signed in. App updates retain this directory; verification uses temporary roots.
+No credentials, provider configuration, plugins or history are copied from the
+user’s desktop installation. Galta’s MCP supplies canvas and generation access.
+
+The local web preview keeps the same separation under `output/web-app/runtime/codex`.
+Its explicit developer sign-in command is `bun run web:login`; `bun run web:dev`
+never borrows a desktop sign-in. The preview keeps its existing origin and canvas data.
+
+The native configuration handshake declares `conversationStorage: galta`. The
+extension requires it before checking the account or starting a conversation;
+an older shared-storage host asks the user to update Galta for Mac. New chats
+are absent from the desktop home’s thread list and cannot compete with a desktop
+writer. External agents retain their own conversations and connect through MCP.
+
+Earlier shared-home conversations remain readable in the canvas’s saved transcript.
+They are not silently rebound, truncated, replayed or moved. If their native
+context is unavailable, the conversation offers **Start a new conversation** on
+the same canvas, retains the current draft, and disables resubmission into the
+unavailable context. A temporarily occupied conversation allows an explicit retry
+after its other connection finishes, or a new conversation. This is
+an explicit fresh context, not history migration. Existing desktop entries are
+not deleted or hidden by this change. A supported, lossless legacy-history import
+and removal flow remains a separate migration requirement before release to
+users who require continued native context from those conversations.
 
 ## Account state and recovery
 
@@ -78,7 +111,46 @@ history is preserved; start a new conversation to obtain a fresh tool catalog.
 
 This implementation uses a local process through native messaging. Browser-only subscription OAuth is not implemented or proven by this integration. It does not read ChatGPT cookies or copy Codex credentials into extension storage.
 
+Before preparing a model turn, the native host selects between two named OpenAI
+transport configurations. Both use the same Codex-owned account, model catalogue
+and default endpoint. `galta_openai` retains WebSocket; `galta_openai_http` uses
+HTTP/SSE. They are configuration IDs, not different services or accounts. Built-in
+provider IDs cannot be overridden in supported Codex, so these configurations are
+declared centrally in `packages/runtime/src/codexConfig.ts` and checked against
+`config/read`. Resume and fork explicitly receive the selected configuration.
+
+`galta/model/transport` accepts only a thread ID and current input byte count. The
+host reads the public `thread/items/list` projection, counts encoded content and
+the file-size upper bound for `imageView` receipts, then returns only the transport
+choice. An estimated 8 MiB context selects HTTP, leaving headroom below the observed
+approximately 16 MiB WebSocket peer limit. This is a conservative estimate, not an
+exact wire-size API: missing image metadata, unavailable pagination or more than
+64 pages or the bounded local-read deadline also select HTTP. Compaction is not assumed to remove historical images.
+No transcript, original image, provider rollout or tool result is rewritten.
+
+Small contexts continue over WebSocket. If a request still exceeds the peer's
+limit or a connection breaks mid-turn, Codex gets one stream retry before its own
+HTTP fallback. This deliberately also limits SSE stream retries to one; HTTP
+request-level retries and provider retry deadlines retain their defaults. Galta
+never resubmits the user turn, repeats a completed tool or holds an idle writer
+lock to keep a socket alive. This bounds the failure rather than claiming to
+change the upstream message limit. The native host alone measures history; large
+base64 payloads are not copied into browser state for this decision.
+
+`scripts/verify-codex-transport.ts` exercises the official app-server against a
+local WebSocket/SSE peer: healthy WS, transient reconnect, size rejection, SSE
+recovery and one tool effect across transport fallback. It needs no account or
+paid inference. `tests/codex-model-transport.test.mjs` and the native relay/runtime
+tests cover selection, cancellation and the browser boundary.
+
 Chrome's native-messaging API is the narrow bridge: the service worker has the `nativeMessaging` permission, connects to `com.galta.codex`, and the host is restricted to Galta's exact extension origin. The host translates Chrome's length-prefixed messages to the Codex app-server's JSONL stdio protocol. Connection reads are bounded; if Codex does not answer, Galta retires that native transport before the user retries, so the next attempt initializes a fresh host.
+
+Cancellation has ten seconds to finish after an explicit Stop or owner detachment, including when turn/start never returns. An interrupt acknowledgement alone does not release ownership. A timeout retires the actual transport. Lifecycle RPCs have a sixty-second response deadline; an uncertain turn/start retains ownership through cancellation, and these deadlines never resubmit a turn. When its transport closes or the relay receives SIGTERM/SIGINT, the native host terminates its child, forcibly ends it after two seconds if necessary, and waits for it to exit, including when cancelling an errored reader fails.
+
+Before a turn id arrives, `galta/turn/cancel` records cancellation at the owning
+Galta adapter. It starts the same deadline and sends Codex's `turn/interrupt`
+only once the id is observed. This local control request is never forwarded to
+Codex, and stopping does not discard final receipts already in flight.
 
 Each direction owns its UTF-8 decoder so concurrent traffic cannot corrupt split
 characters. Either peer closing cancels both read loops and ends the relay.
@@ -156,10 +228,13 @@ Following the official [app-server event contract](https://learn.chatgpt.com/doc
 `turn/completed` for the current turn is the runtime's preferred terminal
 authority. `error` supplies diagnostics and `turn/interrupt` requests
 cancellation; neither causes Galta to replay a turn or a tool. Galta keeps a
-2-second window after a non-retry error for final item receipts, and bounds a
-provider-retry stream to 30 seconds without model progress. If the matching
-completion never arrives, the runtime emits a local failure so the task and its
-UI can release; this is an orphan guard, not a second provider retry policy.
+2-second window after a non-retry error for final item receipts. If that matching
+completion never arrives, the runtime emits the provider's failure so the task
+and its UI can release. A retry notification is not terminal evidence: Galta
+never imposes its own deadline on Codex's retries or websocket-to-HTTP fallback.
+The same turn remains visible and stoppable until model progress, a terminal
+provider result, user cancellation or actual local connection loss. No elapsed
+silence is converted into a fabricated disconnection.
 Pending UI interactions are dismissed on `serverRequest/resolved`, turn
 completion or actual connection loss. An old turn's completion cannot release a
 new turn's owner, and a late Stop cannot overwrite a completion already received.
@@ -199,19 +274,21 @@ See the official [configuration schema](https://developers.openai.com/codex/conf
 
 Conversation threads carry per-thread settings as well, `CODEX_THREAD_CONFIG`
 in `packages/runtime/src/codexConfig.ts`, passed on start, resume and fork. The
-embedded process shares the user's CODEX_HOME for sign-in, and with it their
-coding setup. Measured on 2026-10-27 against the bundled app-server and a local
+private home keeps sign-in and coding setup separate. Previously measured on 2026-10-27 against the bundled app-server and a local
 fixture, a Galta request on the owner's Mac carried a skills catalogue of about
 25k characters and the permissions, collaboration-mode and apps blocks, none of
 which serve a canvas. The settings switch them off:
 `skills.include_instructions`, `include_permissions_instructions`,
 `include_collaboration_mode_instructions` and `include_apps_instructions` are
-false. Only Galta's threads change. No `mcp_servers` table is sent: a
+false. `features.default_mode_request_user_input` is true so a model can ask
+structured questions in Default mode. The tool's server request reaches the
+existing task question/answer protocol; it does not change execution policy or
+enter Plan mode. The [app-server's Default-mode input test](https://github.com/openai/codex/blob/main/codex-rs/app-server/tests/suite/v2/request_user_input.rs)
+uses the same per-thread configuration. Only Galta's threads change. No `mcp_servers` table is sent: a
 per-thread table replaces the process's server table and removes the galta
-server with it. Two inherited blocks have no per-thread switch in
-0.162.0-alpha.17.2: the global `CODEX_HOME/AGENTS.md`, which only a separate
-home (and a second sign-in) would remove, and the multi-agent role, which
-follows the model catalog's `multi_agent_version`.
+server with it. The private home no longer inherits the desktop's
+`CODEX_HOME/AGENTS.md`; the multi-agent role follows the model catalog's
+`multi_agent_version`.
 
 Every one of these settings acts after the prefix a request shares with the
 prompt cache, and Galta keeps that prefix as Codex has it. Codex keys the cache
@@ -239,16 +316,13 @@ preview attached to a message is already a capture, to answer from it when it
 shows enough: an agent told to look at visual work had captured the canvas three
 times to count five pictures.
 
-Codex memory is one store per `CODEX_HOME`, shared with the user's coding
-sessions, with no per-application scope. The embedded process therefore sets
-`features.memories=false`, so Galta conversations never load that store and the
-process never runs its consolidation pipeline on the user's account, and
-`memories.generate_memories=false`, which records Galta threads as
-`memory_mode = disabled` so other Codex processes sharing the home do not mine
-them. `assertCodexEmbeddedConfig` rejects a connection whose effective config
-differs. Threads created before this setting keep their recorded mode, and
-memories already extracted from them stay in the user's store; Galta does not
-rewrite Codex storage.
+The private home also keeps creative conversations separate from coding memory.
+The embedded process sets `features.memories=false` and
+`memories.generate_memories=false`: it neither loads memory nor runs its
+consolidation pipeline, and records Galta threads as `memory_mode = disabled`.
+`assertCodexEmbeddedConfig` rejects a connection whose effective config differs.
+Threads and memories from earlier shared-home versions remain in their original
+store; Galta does not rewrite them.
 
 Every canvas message carries a bounded structured observation and, for a nonempty
 viewport, a low-detail preview when rendering succeeds. The message schema limits
@@ -337,8 +411,13 @@ missing user input, and macOS consent are distinct from tool approval. TUI
 notifications do not run in app-server. Lifecycle hooks and plugin enablement
 are retained; Galta does not disable unrelated capabilities to hide a prompt.
 `packages/runtime/src/codexConfig.ts` owns these process and turn settings.
-Any server requests for extra permissions, approvals or user input are still
-shown inside the conversation and answered through the exact original request.
+Recovered model-retry details retain their diagnostic under `Previous interruption`;
+only an outstanding or failed retry presents it as an error. Codex owns transport
+retry and fallback; Galta does not replay a user turn.
+
+Server requests for extra permissions and approvals open the conversation.
+Structured user questions also work in the collapsed composer and preserve its
+message draft. Both presentations answer the exact original server request.
 The kernel still owns approval policy and tool execution. Unsupported interactive
 request types return an explicit error. Galta is not feature parity with every
 Codex desktop interaction: remote OAuth elicitation and arbitrary artifact

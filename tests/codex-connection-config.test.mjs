@@ -30,7 +30,7 @@ function portFixture(configuration, dropMethods = new Set()) {
       calls.push(message)
       if (message.id === undefined) return
       if (dropMethods.has(message.method)) return
-      const result = message.method === 'config/read' ? configuration : {}
+      const result = message.method === 'galta/config/read' ? { conversationStorage: 'galta' } : message.method === 'config/read' ? configuration : {}
       queueMicrotask(() => listeners.forEach(listener => listener({ id: message.id, result })))
     }
   }
@@ -135,7 +135,7 @@ test('a timed out connection read retires the dead host before the next retry', 
     expect(dead.port.disconnects).toBe(1)
     await bridge.request('account/read')
     expect(connections).toBe(2)
-    expect(healthy.calls.map(call => call.method)).toEqual(['initialize', 'initialized', 'config/read', 'account/read'])
+    expect(healthy.calls.map(call => call.method)).toEqual(['initialize', 'initialized', 'config/read', 'galta/config/read', 'account/read'])
   } finally {
     globalThis.setTimeout = previousSetTimeout
     if (previous === undefined) delete globalThis.chrome; else globalThis.chrome = previous
@@ -203,4 +203,38 @@ test('a connection that gives Galta tools too little time to wait for a generati
   const short = compatibleCodexConfig()
   delete short.config.mcp_servers.galta.tool_timeout_sec
   expect(() => assertCodexEmbeddedConfig(short)).toThrow('too little time')
+})
+
+test('an old shared-storage host is rejected before reading or starting login', async () => {
+  const previous = globalThis.chrome, { port, calls } = portFixture(compatible)
+  const send = port.postMessage
+  port.postMessage = message => {
+    if (message.method === 'galta/config/read') { calls.push(message); queueMicrotask(() => port.emitMessage({ id: message.id, result: {} })) }
+    else send(message)
+  }
+  globalThis.chrome = { runtime: { connectNative: () => port, sendMessage: async () => {} } }
+  try {
+    const bridge = new NativeCodexAdapter()
+    await expect(bridge.request('account/login/start', { type: 'chatgpt' })).rejects.toThrow('Update Galta for Mac')
+    expect(calls.some(call => call.method.startsWith('account/'))).toBe(false)
+    expect(port.disconnects).toBe(1)
+  } finally { globalThis.chrome = previous }
+})
+
+test('transport policy keeps OpenAI auth and WS, rejects stale retry policy or redirected credentials', async () => {
+  for (const change of [
+    config => { config.model_provider = 'openai' },
+    config => { config.model_providers.galta_openai.stream_max_retries = 5 },
+    config => { config.model_providers.galta_openai.supports_websockets = false },
+    config => { config.model_providers.galta_openai.requires_openai_auth = false },
+    config => { config.model_providers.galta_openai.base_url = 'https://other.example' },
+    config => { config.model_providers.galta_openai.env_key = 'OTHER_KEY' },
+  ]) {
+    const response = compatibleCodexConfig(); change(response.config)
+    const { port, calls } = portFixture(response)
+    const bridge = new NativeCodexAdapter({ connectNative: () => port, sendMessage: async () => {} })
+    await expect(bridge.request('account/read')).rejects.toThrow('model transport policy')
+    expect(calls.some(call => call.method === 'account/read')).toBe(false)
+    expect(port.disconnects).toBe(1)
+  }
 })

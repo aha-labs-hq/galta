@@ -1,6 +1,8 @@
 import { test, expect } from 'bun:test'
 import { NativeCodexAdapter } from '../apps/extension/src/background/codexAdapter.ts'
 import { compatibleCodexConfig } from './helpers/codex-config.ts'
+import { CodexAgentRuntime } from '../packages/runtime/src/codex.ts'
+import { galtaToolContract } from '../packages/canvas/src/contract'
 
 test('server requests cannot resolve client RPCs; ownership survives closing during turn/start', async () => {
   const previous = globalThis.chrome
@@ -8,7 +10,7 @@ test('server requests cannot resolve client RPCs; ownership survives closing dur
   const emit = message => listeners.forEach(fn => fn(message))
   const port = { onMessage: { addListener: fn => listeners.add(fn) }, onDisconnect: { addListener() {} }, postMessage(message) {
     sent.push(message)
-    if (message.method && message.id !== undefined && message.method !== 'turn/start') queueMicrotask(() => emit({ id: message.id, result: message.method === 'config/read' ? compatibleCodexConfig() : {} }))
+    if (message.method && message.id !== undefined && message.method !== 'turn/start') queueMicrotask(() => emit({ id: message.id, result: message.method === 'galta/config/read' ? { conversationStorage: 'galta' } : message.method === 'config/read' ? compatibleCodexConfig() : {} }))
   } }
   globalThis.chrome = { runtime: { connectNative: () => port, sendMessage: async n => { notifications.push(n) } } }
   try {
@@ -53,15 +55,31 @@ test('steer is fenced to the task that owns the active turn', async () => {
   } finally { globalThis.chrome = previous }
 })
 
-function fixture() {
+function fixture(pendingThread) {
   const listeners = new Set(), sent = []
   const emit = message => listeners.forEach(listener => listener(message))
   const port = { disconnects: 0, disconnect() { this.disconnects++ }, onMessage: { addListener: fn => listeners.add(fn) }, onDisconnect: { addListener() {} }, postMessage(message) {
     sent.push(message)
-    if (message.method && message.id !== undefined && message.method !== 'turn/interrupt') queueMicrotask(() => emit({ id: message.id, result: message.method === 'config/read' ? compatibleCodexConfig() : message.method === 'turn/start' ? { turn: { id: 'current' } } : {} }))
+    if (message.method && message.id !== undefined && message.method !== 'turn/interrupt' && !(message.method === 'turn/start' && message.params.threadId === pendingThread)) queueMicrotask(() => emit({ id: message.id, result: message.method === 'galta/config/read' ? { conversationStorage: 'galta' } : message.method === 'config/read' ? compatibleCodexConfig() : message.method === 'turn/start' ? { turn: { id: 'current' } } : {} }))
   } }
   return { port, emit, sent }
 }
+
+test('thread cleanup cannot unsubscribe a running turn in the shared adapter', async () => {
+  const previous = globalThis.chrome, f = fixture()
+  globalThis.chrome = { runtime: { connectNative: () => f.port, sendMessage: async () => {} } }
+  try {
+    const bridge = new NativeCodexAdapter()
+    await bridge.requestForOwner('task-a', 'turn/start', { threadId: 'thread' })
+    for (const owner of ['task-a', 'task-b']) {
+      await expect(bridge.requestForOwner(owner, 'thread/unsubscribe', { threadId: 'thread' })).rejects.toThrow('still running')
+    }
+    expect(f.sent.some(message => message.method === 'thread/unsubscribe')).toBe(false)
+    f.emit({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'current', status: 'completed' } } })
+    await bridge.requestForOwner('task-a', 'thread/unsubscribe', { threadId: 'thread' })
+    expect(f.sent.at(-1).method).toBe('thread/unsubscribe')
+  } finally { globalThis.chrome = previous }
+})
 
 test('an old turn completion cannot release the active owner or route its approvals elsewhere', async () => {
   const previous = globalThis.chrome, f = fixture()
@@ -98,4 +116,131 @@ test('a failed orphan interruption retires the actual transport; a late rejectio
       expect(bridge.reconnectWhenIdle()).toBe(true)
     }
   } finally { globalThis.chrome = previous }
+})
+
+for (const trigger of ['detach', 'stop']) for (const completed of [false, true]) test(`${trigger} bounds acknowledged cancellation; completion observed: ${completed}`, async () => {
+  const previous = globalThis.chrome, originalTimeout = globalThis.setTimeout
+  const f = fixture(), timers = []
+  globalThis.chrome = { runtime: { connectNative: () => f.port, sendMessage: async () => {} } }
+  globalThis.setTimeout = (callback, delay, ...args) => {
+    if (delay === 10_000) { timers.push(callback); return originalTimeout(() => {}, 1000) }
+    return originalTimeout(callback, delay, ...args)
+  }
+  try {
+    const bridge = new NativeCodexAdapter()
+    await bridge.requestForOwner('task', 'turn/start', { threadId: 'thread' })
+    f.emit({ method: 'error', params: { threadId: 'thread', turnId: 'current', willRetry: true, error: { message: 'Reconnecting' } } })
+    let stopping
+    if (trigger === 'detach') bridge.releaseOwner('task')
+    else {
+      await expect(bridge.requestForOwner('another-task', 'turn/interrupt', { threadId: 'thread', turnId: 'current' })).rejects.toThrow('not owned')
+      stopping = bridge.requestForOwner('task', 'turn/interrupt', { threadId: 'thread', turnId: 'current' })
+    }
+    await new Promise(resolve => originalTimeout(resolve, 0))
+    const interrupt = f.sent.find(message => message.method === 'turn/interrupt')
+    f.emit({ id: interrupt.id, result: {} })
+    await stopping
+    expect(f.port.disconnects).toBe(0)
+    if (completed) {
+      f.emit({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'current', status: 'interrupted' } } })
+      await bridge.requestForOwner('next-task', 'turn/start', { threadId: 'thread' })
+    }
+    timers[0]()
+    expect(f.port.disconnects).toBe(completed ? 0 : 1)
+    if (completed) f.emit({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'current', status: 'completed' } } })
+    expect(bridge.reconnectWhenIdle()).toBe(true)
+  } finally { globalThis.setTimeout = originalTimeout; globalThis.chrome = previous }
+})
+
+for (const observed of [false, true]) test(`a lost start response retains ownership during cancellation alongside another turn; start observed: ${observed}`, async () => {
+  const originalTimeout = globalThis.setTimeout, timers = [], f = fixture('uncertain')
+  globalThis.setTimeout = (callback, delay, ...args) => {
+    if (delay === 10_000 || delay === 60_000) {
+      const handle = originalTimeout(() => {}, 1000)
+      timers.push({ callback, delay, handle }); return handle
+    }
+    return originalTimeout(callback, delay, ...args)
+  }
+  const bridge = new NativeCodexAdapter({ connectNative: () => f.port, sendMessage: async () => {} })
+  try {
+    await bridge.requestForOwner('other-task', 'turn/start', { threadId: 'other' })
+    const pending = bridge.requestForOwner('task', 'turn/start', { threadId: 'uncertain' }).catch(error => error)
+    await new Promise(resolve => originalTimeout(resolve, 0))
+    if (observed) f.emit({ method: 'turn/started', params: { threadId: 'uncertain', turn: { id: 'current' } } })
+    timers.filter(timer => timer.delay === 60_000).at(-1).callback()
+    expect((await pending).message).toContain('did not respond')
+    await expect(bridge.requestForOwner('new-task', 'turn/start', { threadId: 'uncertain' })).rejects.toThrow('already running')
+    await expect(bridge.requestForOwner('task', 'thread/unsubscribe', { threadId: 'uncertain' })).rejects.toThrow('still running')
+    if (!observed) f.emit({ method: 'turn/started', params: { threadId: 'uncertain', turn: { id: 'current' } } })
+    await new Promise(resolve => originalTimeout(resolve, 0))
+    const interrupt = f.sent.find(message => message.method === 'turn/interrupt')
+    expect(interrupt.params).toEqual({ threadId: 'uncertain', turnId: 'current' })
+    f.emit({ id: interrupt.id, result: {} })
+    expect(f.port.disconnects).toBe(0)
+    timers.find(timer => timer.delay === 10_000).callback()
+    expect(f.port.disconnects).toBe(1)
+    expect(f.sent.filter(message => message.method === 'turn/start')).toHaveLength(2)
+  } finally {
+    for (const timer of timers) clearTimeout(timer.handle)
+    globalThis.setTimeout = originalTimeout
+  }
+})
+
+for (const arrives of [false, true]) test(`Stop supervises a pending turn/start without a turn id; response eventually arrives: ${arrives}`, async () => {
+  const originalTimeout = globalThis.setTimeout, timers = [], f = fixture('pending')
+  globalThis.setTimeout = (callback, delay, ...args) => {
+    if (delay === 10_000) {
+      const handle = originalTimeout(() => {}, 1000)
+      timers.push({ callback, handle }); return handle
+    }
+    return originalTimeout(callback, delay, ...args)
+  }
+  let connections = 0, iterator
+  const bridge = new NativeCodexAdapter({ connectNative: () => { connections++; return f.port }, sendMessage: async () => {} })
+  const rpc = {
+    subscribe: listener => bridge.subscribe(listener), respond: async () => {},
+    request: async (method, params) => {
+      if (method === 'galta/config/read') return { toolContract: await galtaToolContract(), conversationStorage: 'galta' }
+      if (method === 'thread/start') return { thread: { id: 'pending' } }
+      return bridge.requestForOwner('task', method, params)
+    }
+  }
+  try {
+    const runtime = new CodexAgentRuntime(rpc)
+    const handle = await runtime.start({ projectId: 'canvas', branchId: 'main', instruction: 'Draw', execution: { id: 'execution', cwd: '/fixture' }, runtime: { sessionId: 'session', sessionLabel: 'New conversation', modelId: 'model', effort: 'Low', providerId: 'codex-app-server' } }, { request: async () => ({}) })
+    iterator = handle.updates[Symbol.asyncIterator]()
+    await iterator.next(); await iterator.next()
+    const pending = iterator.next().catch(error => error)
+    await new Promise(resolve => originalTimeout(resolve, 0))
+    await runtime.stop(handle.runId)
+    expect(timers).toHaveLength(1)
+    expect(f.sent.some(message => message.method === 'galta/turn/cancel' || message.method === 'turn/interrupt')).toBe(false)
+    if (arrives) {
+      const start = f.sent.find(message => message.method === 'turn/start')
+      f.emit({ id: start.id, result: { turn: { id: 'late-turn' } } })
+      expect((await pending).value.turnId).toBe('late-turn')
+      await new Promise(resolve => originalTimeout(resolve, 0))
+      const interrupts = f.sent.filter(message => message.method === 'turn/interrupt')
+      expect(interrupts).toHaveLength(1)
+      expect(interrupts[0].params).toEqual({ threadId: 'pending', turnId: 'late-turn' })
+      f.emit({ id: interrupts[0].id, result: {} })
+      f.emit({ method: 'item/completed', params: { threadId: 'pending', turnId: 'late-turn', item: { type: 'agentMessage', id: 'receipt', text: 'Saved before stopping' } } })
+      f.emit({ method: 'turn/completed', params: { threadId: 'pending', turn: { id: 'late-turn', status: 'interrupted' } } })
+      expect((await iterator.next()).value.item.text).toBe('Saved before stopping')
+      expect((await iterator.next()).value.state).toBe('stopped')
+      timers[0].callback()
+      expect(f.port.disconnects).toBe(0)
+    } else {
+      timers[0].callback()
+      expect((await pending).message).toContain('Chat was interrupted')
+      expect(f.port.disconnects).toBe(1)
+      expect(f.sent.some(message => message.method === 'thread/unsubscribe')).toBe(false)
+    }
+    expect(connections).toBe(1)
+    expect(f.sent.filter(message => message.method === 'turn/start')).toHaveLength(1)
+  } finally {
+    await iterator?.return()
+    for (const timer of timers) clearTimeout(timer.handle)
+    globalThis.setTimeout = originalTimeout
+  }
 })

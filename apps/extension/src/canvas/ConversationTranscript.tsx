@@ -10,12 +10,14 @@ import { Unfold } from '@/components/Unfold'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ArtifactDelivery, ConversationMessage, artifactReferences, type ArtifactDownload } from './ConversationMessage'
 import { ConversationError } from './ConversationError'
+import { hasUnobservedCompletion } from '../tasks/recovery'
 import { ConversationQuestion } from './ConversationQuestion'
 import { activityDetails, activityText, elapsedLabel, hasActivityDetails, WorkingDot } from './conversationActivity'
 import { currentConversationItem, presentConversation, type ConversationTimelineEntry } from './conversationStore'
 import type { PendingQuestion } from './ConversationDock'
 import { RevealProvider, useReadingPosition, useReveal, type ReadingPosition, type TurnReadingState } from './readingPosition'
 import { Locate } from './Locate'
+import { SentRecording } from '../recording/RecordingComposer'
 
 const StatusTicker = memo(function StatusTicker({ label, active, announce = true }: { label: string; active: boolean; announce?: boolean }) {
   const [state, setState] = useState(() => ({ previous: label, current: label, revision: 0 }))
@@ -137,7 +139,8 @@ function UserMessage({ children, followup = false }: { children: ReactNode; foll
   return <div className={`conversation-user${followup ? ' conversation-followup' : ''}`}><span className="sr-only">You: </span>{children}</div>
 }
 
-const ConversationTurn = memo(function ConversationTurn({ turn, reading, onArtifactDownload }: { turn: CreativeConversationTurn; reading: TurnReadingState; onArtifactDownload?: ArtifactDownload | undefined }) {
+type RestoreRecording = (requestId: string, instruction: string) => Promise<void>
+const ConversationTurn = memo(function ConversationTurn({ turn, reading, activity, onArtifactDownload, onRestoreRecording }: { activity?: string | undefined; turn: CreativeConversationTurn; reading: TurnReadingState; onArtifactDownload?: ArtifactDownload | undefined; onRestoreRecording?: RestoreRecording | undefined }) {
   const { process, replies, attention, timeline } = useMemo(() => presentConversation(turn), [turn])
   const artifacts = useMemo(() => {
     const found = new Map<string, NonNullable<ConversationItem['artifacts']>[number]>()
@@ -152,13 +155,14 @@ const ConversationTurn = memo(function ConversationTurn({ turn, reading, onArtif
   const stopped = !running && turn.status !== 'completed'
   const activeItemId = currentConversationItem(turn.items, running)?.id
   const finalAnswerPending = running && turn.items.some(item => item.type === 'agentMessage' && item.phase === 'final_answer' && item.status === 'inProgress' && !item.text)
-  const duration = turn.completedAt ? elapsedLabel(turn.startedAt, turn.completedAt) : ''
+  const duration = turn.completedAt && !hasUnobservedCompletion(turn) ? elapsedLabel(turn.startedAt, turn.completedAt) : ''
   const processEntries = timeline.filter((entry): entry is Extract<ConversationTimelineEntry, { kind: 'process' }> => entry.kind === 'process')
   const lastProcessId = processEntries.at(-1)?.id
   // A boundary being drawn already says the agent is busy.
   const condensing = timeline.some(entry => entry.kind === 'boundary' && entry.item.id === activeItemId)
-  return <article className="conversation-turn scroll-mt-4 outline-none" data-turn-id={turn.id} tabIndex={-1} aria-label={turn.instruction}>
-    <UserMessage>{turn.instruction}</UserMessage>
+  return <article className="conversation-turn scroll-mt-4 outline-none" data-turn-id={turn.id} tabIndex={-1} aria-label={turn.instruction || 'Recorded request'}>
+    {turn.instruction && <UserMessage>{turn.instruction}</UserMessage>}
+    {turn.context?.recording && <SentRecording projectId={turn.context.recording.projectId} requestId={turn.id} duration={turn.context.recording.duration} onRestore={(turn.status === 'failed' || turn.status === 'stopped') && onRestoreRecording ? () => onRestoreRecording(turn.id, turn.instruction) : undefined} />}
     {timeline.map(entry => {
       if (entry.kind === 'process') return <ProcessBlock key={entry.id} entry={entry} running={running} stopped={stopped} activeItemId={activeItemId} duration={entry.id === lastProcessId ? duration : ''} reading={reading} onArtifactDownload={onArtifactDownload} />
       if (entry.kind === 'user') return <UserMessage key={entry.message.id} followup>{entry.message.text}</UserMessage>
@@ -170,7 +174,7 @@ const ConversationTurn = memo(function ConversationTurn({ turn, reading, onArtif
         <ConversationMessage text={item.text} artifacts={item.artifacts} streaming={running && item.status === 'inProgress' && item.id === activeItemId} onArtifactDownload={onArtifactDownload} />
       </div>
     })}
-    {running && !condensing && !timeline.some(entry => entry.kind === 'reply' && entry.item.text) && (!process.length || finalAnswerPending) && <div className="conversation-working mt-3 flex items-center gap-2 text-xs text-muted-foreground" role="status"><WorkingDot /><span className="conversation-text-shimmer">{finalAnswerPending ? 'Writing a response' : 'Thinking'}</span></div>}
+    {running && !condensing && !timeline.some(entry => entry.kind === 'reply' && entry.item.text) && (!process.length || finalAnswerPending) && <div className="conversation-working mt-3 flex items-center gap-2 text-xs text-muted-foreground" role="status"><WorkingDot /><span className="conversation-text-shimmer">{finalAnswerPending ? 'Writing a response' : activity ?? 'Thinking'}</span></div>}
     <ArtifactDelivery artifacts={artifacts} onDownload={onArtifactDownload} />
     {turn.status === 'stopped' && <p className="conversation-status mt-3 text-xs text-muted-foreground">Stopped{!replies.length ? ' · No final response' : ''}</p>}
     {turn.status === 'failed' && !attention.length && <p className="conversation-status mt-3 text-sm text-destructive">This request could not be completed.</p>}
@@ -179,7 +183,7 @@ const ConversationTurn = memo(function ConversationTurn({ turn, reading, onArtif
 
 function RequestIndex({ turns, onJump }: { turns: readonly CreativeConversationTurn[]; onJump(id: string, reply: boolean): void }) {
   const [query, setQuery] = useState('')
-  const matches = turns.map((turn, i) => ({ turn, number: i + 1 })).filter(({ turn }) => turn.instruction.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+  const matches = turns.map((turn, i) => ({ turn, number: i + 1 })).filter(({ turn }) => (turn.instruction || 'Recorded request').toLocaleLowerCase().includes(query.toLocaleLowerCase()))
   const statusLabel = (turn: CreativeConversationTurn) => turn.status === 'streaming' || turn.status === 'preparing' ? 'Working' : turn.status === 'failed' ? 'Needs attention' : turn.status === 'stopped' ? 'Stopped' : 'Complete'
   const statusIcon = (turn: CreativeConversationTurn) => turn.status === 'streaming' || turn.status === 'preparing'
     ? <LoaderCircle className="request-index-status-icon motion-safe:animate-spin" aria-hidden="true" />
@@ -193,7 +197,7 @@ function RequestIndex({ turns, onJump }: { turns: readonly CreativeConversationT
     <Input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Find a request…" aria-label="Find a request" className="request-index-search mb-2" />
     <ol aria-label="Requests in this conversation" className="request-index-list m-0 max-h-72 list-none overflow-auto overscroll-contain p-0">
       {matches.map(({ turn, number }) => <li key={turn.id} className="request-index-row flex items-center gap-1">
-        <Button variant="ghost" size="compact" className="request-index-trigger h-auto min-w-0 flex-1 justify-start gap-2 py-2 text-left" onClick={() => onJump(turn.id, false)}><span className="request-index-number shrink-0 text-xs text-muted-foreground tabular-nums">{String(number).padStart(2, '0')}</span><span className="request-index-copy min-w-0"><span className="request-index-prompt line-clamp-2 whitespace-normal wrap-anywhere">{turn.instruction}</span><span className="request-index-status">{statusIcon(turn)}<span>{statusLabel(turn)}</span></span></span></Button>
+        <Button variant="ghost" size="compact" className="request-index-trigger h-auto min-w-0 flex-1 justify-start gap-2 py-2 text-left" onClick={() => onJump(turn.id, false)}><span className="request-index-number shrink-0 text-xs text-muted-foreground tabular-nums">{String(number).padStart(2, '0')}</span><span className="request-index-copy min-w-0"><span className="request-index-prompt line-clamp-2 whitespace-normal wrap-anywhere">{turn.instruction || 'Recorded request'}</span><span className="request-index-status">{statusIcon(turn)}<span>{statusLabel(turn)}</span></span></span></Button>
         {turn.items.some(item => item.type === 'agentMessage' && item.phase === 'final_answer' && item.text) && <Button variant="ghost" size="icon-compact" aria-label={`Jump to response ${number}`} title="Jump to response" onClick={() => onJump(turn.id, true)}><ArrowUpRight className="size-4" /></Button>}
       </li>)}
       {!matches.length && <li className="px-2 py-4 text-sm text-muted-foreground">No matching requests</li>}
@@ -221,8 +225,8 @@ function openingStart(reading: ReadingPosition, sessionId: string | undefined, t
   return start
 }
 
-type Props = { id: string; sessionId?: string | undefined; turns: readonly CreativeConversationTurn[]; actions?: ReactNode; title?: string | undefined; question: PendingQuestion | null; error: string; reading: MutableRefObject<ReadingPosition>; onCollapse?: () => void; onArtifactDownload?: ArtifactDownload | undefined }
-export const ConversationTranscript = memo(function ConversationTranscript({ id, sessionId, turns, actions, title, question, error, reading, onCollapse, onArtifactDownload }: Props) {
+type Props = { activity?: string | undefined; id: string; sessionId?: string | undefined; turns: readonly CreativeConversationTurn[]; actions?: ReactNode; title?: string | undefined; question: PendingQuestion | null; questionContent?: ReactNode; error: string; reading: MutableRefObject<ReadingPosition>; onCollapse?: () => void; onArtifactDownload?: ArtifactDownload | undefined; onRestoreRecording?: RestoreRecording | undefined }
+export const ConversationTranscript = memo(function ConversationTranscript({ activity, id, sessionId, turns, actions, title, question, questionContent, error, reading, onCollapse, onArtifactDownload, onRestoreRecording }: Props) {
   const position = useReadingPosition(reading, sessionId)
   const { scroll, content, goTo, markAnchor, keepAnchor } = position
   const [indexOpen, setIndexOpen] = useState(false)
@@ -282,13 +286,13 @@ export const ConversationTranscript = memo(function ConversationTranscript({ id,
           if (from > 0 && !reading.current.following && element.scrollTop < element.clientHeight) earlier(2, true)
         }}>
         <RevealProvider value={position.reveal}><div ref={position.content}>
-          {!turns.length && !error && <p className="conversation-empty text-sm leading-relaxed text-muted-foreground">No messages yet</p>}
+          {!turns.length && !question && !error && <p className="conversation-empty text-sm leading-relaxed text-muted-foreground">No messages yet</p>}
           {turns.slice(from).map(turn => {
             let opened = reading.current.turns.get(turn.id)
             if (!opened) { opened = { activities: new Set(), processExpanded: new Set() }; reading.current.turns.set(turn.id, opened) }
-            return <ConversationTurn key={`${sessionId ?? 'conversation'}:${turn.id}`} turn={turn} reading={opened} onArtifactDownload={onArtifactDownload} />
+            return <ConversationTurn key={`${sessionId ?? 'conversation'}:${turn.id}`} turn={turn} reading={opened} activity={activity} onArtifactDownload={onArtifactDownload} onRestoreRecording={onRestoreRecording} />
           })}
-          {question && <ConversationQuestion key={String(question.params.itemId ?? question.method)} question={question} />}
+          {questionContent ?? (question && <ConversationQuestion key={question.id} question={question} />)}
           {error && <ConversationError text={error} announce />}
         </div></RevealProvider>
       </div>

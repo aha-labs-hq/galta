@@ -1,10 +1,12 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { embeddedCodexEnvironment } from '../../native/adapters/codex/environment'
 import { NativeClient } from './native-client'
 
 /** Real installed relay → Codex → code-mode host → shell; only the model is a local fixture. */
 export async function verifyToolExecution(command: string, origin: string, environment: Record<string, string | undefined>, home: string) {
-  const configDirectory = join(home, '.codex'), cwd = join(home, 'tool-verification')
+  const runtimeDirectory = join(home, 'tool-verification-runtime'), cwd = join(home, 'tool-verification')
+  const { directory: configDirectory } = embeddedCodexEnvironment(runtimeDirectory, environment)
   await mkdir(configDirectory, { recursive: true }); await mkdir(cwd, { recursive: true })
   const marker = `galta-tool-proof-${crypto.randomUUID()}`
   await writeFile(join(cwd, 'proof.txt'), marker + '\n')
@@ -41,12 +43,12 @@ export async function verifyToolExecution(command: string, origin: string, envir
     await writeFile(join(configDirectory, 'config.toml'), `model='gpt-6-astra'\nmodel_provider='fixture'\n[features]\ncode_mode_only=true\nunified_exec=true\n[model_providers.fixture]\nname='Local package verification'\nbase_url='http://127.0.0.1:${server.port}/v1'\nwire_api='responses'\nrequires_openai_auth=false\nsupports_websockets=false\n`)
     let finish: (turn: any) => void = () => {}
     const completed = new Promise<any>(resolve => { finish = resolve })
-    client = new NativeClient(command, origin, { ...environment, CODEX_HOME: configDirectory, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'galta' }, message => {
+    client = new NativeClient(command, origin, { ...environment, GALTA_RUNTIME_DIRECTORY: runtimeDirectory }, message => {
       if (message.method === 'turn/completed') finish(message.params.turn)
     })
     await client.request('initialize', { clientInfo: { name: 'galta_verification', version: '1' }, capabilities: { experimentalApi: true } })
     client.notify('initialized', {})
-    const { thread } = await client.request('thread/start', { cwd, model: 'gpt-6-astra', ephemeral: true, approvalPolicy: 'never', sandbox: 'danger-full-access' })
+    const { thread } = await client.request('thread/start', { cwd, model: 'gpt-6-astra', modelProvider: 'fixture', ephemeral: true, approvalPolicy: 'never', sandbox: 'danger-full-access' })
     await client.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Run the local tool verification.', text_elements: [] }] })
     const turn = await Promise.race([completed, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Code-mode shell verification timed out')), 30000) })])
     if (fixtureError) throw fixtureError

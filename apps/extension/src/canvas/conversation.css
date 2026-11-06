@@ -80,6 +80,7 @@
 .composer-footer-actions { min-width: 0; justify-content: flex-end; }
 /* Keep the input row aligned with the footer; the grip owns no layout column. */
 .composer-input-row { position: relative; z-index: 1; }
+.composer-input-row[hidden] { display: none; }
 .composer-input::placeholder { color: var(--muted-foreground); opacity: 1; }
 /* Matching path commands let Chromium interpolate the small glyph without a JS loop. */
 .composer-send-glyph path {
@@ -361,3 +362,15 @@ button.conversation-session-trigger:focus-visible { border-color: rgb(120 120 12
 
 .external-agent-activity { display: flex; align-items: center; gap: 16px; padding-left: 12px; font-size: 13px; }
 .external-agent-activity > span { min-width: 0; overflow-wrap: anywhere; display: flex; align-items: center; gap: 8px; }
+
+/* The same answer lives in the composer; only its question changes presentation. */
+.conversation-question { display: grid; gap: var(--space-3); margin-block: var(--space-4); min-width: 0; }
+.conversation-question[data-compact=true] { margin: 0; padding: var(--space-2) var(--space-2) var(--space-4); }
+.conversation-question-prompt { font-size: var(--text-body); line-height: var(--leading-reading); overflow-wrap: anywhere; }
+.conversation-question-progress { display: flex; align-items: center; gap: var(--space-1); color: var(--muted-foreground); font-size: var(--text-label); }
+.conversation-question-options { display: grid; gap: var(--space-2); }
+.conversation-question[data-compact=true] .conversation-question-options { display: flex; flex-wrap: wrap; }
+.conversation-question-option { height: auto; min-height: var(--target); min-width: 0; justify-content: space-between; text-align: start; white-space: normal; overflow-wrap: anywhere; border-radius: var(--radius-control); }
+.conversation-question-option > span { min-width: 0; }
+.conversation-question-option small { display: block; margin-top: var(--space-1); font-size: var(--text-label); font-weight: normal; color: var(--muted-foreground); }
+.conversation-answer-error { margin: var(--space-2); color: var(--destructive); font-size: var(--text-label); }

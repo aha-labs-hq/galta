@@ -61,8 +61,9 @@ function putWorkspace(tx: IDBTransaction, bundle: WorkspaceBundle, records: Work
 export type CreativeConversationTurn = {
   id: string; instruction: string; status: string; threadId?: string; turnId?: string
   startedAt?: number; completedAt?: number
+  completionUnobserved?: boolean
   steering?: Array<{ id: string; text: string; createdAt: number; afterItemId?: string }>
-  context?: { canvasTitle: string; selection: readonly string[]; canvas?: { commitId: string; revision: string; preview: 'attached' | 'unchanged' | 'empty' | 'unavailable'; viewport?: { x: number; y: number; width: number; height: number; zoom: number }; previewEvidenceId?: string }; page?: { title: string; url: string }; unavailablePage?: string }
+  context?: { canvasTitle: string; selection: readonly string[]; recording?: { id: string; projectId: string; duration: number }; canvas?: { commitId: string; revision: string; preview: 'attached' | 'unchanged' | 'empty' | 'unavailable'; viewport?: { x: number; y: number; width: number; height: number; zoom: number }; previewEvidenceId?: string }; page?: { title: string; url: string }; unavailablePage?: string }
   items: ConversationItem[]
 }
 // Native checkpoints are capability-specific. MCP clients own their conversations;

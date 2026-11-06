@@ -12,6 +12,13 @@ test('composer keeps context, execution settings and send coherent through a ful
     const fixture = w.composerFixture = {
       starts: [] as any[],
       steers: [] as any[],
+      replies: [] as any[],
+      ask() {
+        listeners.forEach(listener => listener({ type: 'codex-notification', notification: { id: 80, method: 'item/tool/requestUserInput', params: {
+          threadId: thread.id, turnId: thread.turns.at(-1).id,
+          questions: [{ id: 'light', header: 'Light', question: 'Which light should I use?', options: [{ label: 'Morning light', description: 'A soft morning.' }, { label: 'Evening light', description: 'A warm evening.' }] }]
+        } } }))
+      },
       holdSteer: false,
       releaseSteer: () => {},
       ports: [] as any[],
@@ -47,10 +54,11 @@ test('composer keeps context, execution settings and send coherent through a ful
           { id: 'gpt-5.6-sol', displayName: 'GPT-5.6-Sol', isDefault: true, supportedReasoningEfforts: ['low', 'medium', 'high'].map(reasoningEffort => ({ reasoningEffort })) },
           { id: 'gpt-5.6-luna', displayName: 'GPT-5.6-Luna', supportedReasoningEfforts: [{ reasoningEffort: 'low' }] }
         ] }
+        if (message.type === 'codex-respond') { fixture.replies.push(message); return { ok: true } }
         if (message.type !== 'codex-rpc') throw new Error('Unexpected fixture message: ' + message.type)
         let result: any = {}
         switch (message.method) {
-          case 'galta/config/read': result = { toolContract: (window as any).__galtaToolContract }; break
+          case 'galta/config/read': result = { toolContract: (window as any).__galtaToolContract, conversationStorage: 'galta' }; break
           case 'thread/start': case 'thread/resume': case 'thread/read': result = { thread }; break
           case 'thread/name/set': break
           case 'turn/start': {
@@ -172,6 +180,15 @@ test('composer keeps context, execution settings and send coherent through a ful
   await expect(page.locator('.conversation-turn').first()).toContainText('Thinking stopped')
   await expect(page.locator('.conversation-turn').first().getByRole('button', { name: 'Execution details', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Collapse conversation', exact: true }).click()
+  await input.fill('Retain this message while I answer.')
+  await page.evaluate(() => (window as any).composerFixture.ask())
+  await expect(page.getByRole('button', { name: 'Evening light', exact: true })).toBeVisible()
+  await expect(page.locator('.conversation-dock')).toHaveAttribute('data-open', 'false')
+  await page.getByRole('button', { name: 'Evening light', exact: true }).click()
+  await expect(input).toHaveValue('Retain this message while I answer.')
+  await expect.poll(() => page.evaluate(() => (window as any).composerFixture.replies.map((message: any) => ({ id: message.id, result: message.result })))).toEqual([{ id: 80, result: { answers: { light: { answers: ['Evening light'] } } } }])
+  await expect(page.locator('.conversation-dock')).toHaveAttribute('data-open', 'false')
+  await input.fill('')
   await page.evaluate(() => (window as any).composerFixture.finish())
   await expect(page.locator('.composer-conversation')).toHaveAttribute('data-unread', 'true')
   await expect(page.locator('.conversation-sheet')).toHaveCount(0)

@@ -10,7 +10,7 @@ import type { CanvasScene } from './scene'
 import type { ImageReplacement } from './imageImport'
 import { SelectionExportActions, SelectionPngExport } from './SelectionExportActions'
 import { htmlDocument } from './htmlEmbed'
-import { DrawingStyle } from './DrawingStyle'
+import { DrawingStyle, retainStyleFieldOnEscape } from './DrawingStyle'
 import './selection-actions.css'
 import { arrangeImages, type ImageArrangement } from './arrangeImages'
 import { activateVideo, videoData } from './video'
@@ -159,7 +159,7 @@ export function SelectionActions({ scene, onEdit, onReplace, onOpenPage, onError
       {exporting ? <SelectionExportActions key={selectionKey} scene={scene} source={html ? 'html' : video ? 'video' : image ? 'image' : undefined} onBack={closeExport} onError={onError} /> : state.croppingElementId ? <Button variant="ghost" size="compact" onClick={() => crop(null)}>Done cropping</Button> : <>
         {html ? <Button variant="ghost" size="compact" onClick={() => void onOpenPage(one!.id).catch(error => onError(error instanceof Error ? error.message : 'Unable to open this page.'))}>Open<ArrowUpRight className="selection-open-icon" aria-hidden="true" /></Button>
           : multipleImages ? <Button variant="ghost" size="compact" onClick={() => onEdit(() => tidySelectedImages(scene))}>Tidy</Button>
-          : showStyle ? <Popover open={open === 'style'} onOpenChange={value => setOpen(value ? 'style' : null)}><PopoverAnchor virtualRef={bar} /><PopoverTrigger asChild><Button variant="ghost" size="compact">Style</Button></PopoverTrigger><PopoverContent align="center" sideOffset={8} collisionPadding={12} onOpenAutoFocus={focusPopover} onFocusCapture={keepFocusVisible} className="selection-popover drawing-style-panel">
+          : showStyle ? <Popover open={open === 'style'} onOpenChange={value => setOpen(value ? 'style' : null)}><PopoverAnchor virtualRef={bar} /><PopoverTrigger asChild><Button variant="ghost" size="compact">Style</Button></PopoverTrigger><PopoverContent align="center" sideOffset={8} collisionPadding={12} onOpenAutoFocus={focusPopover} onFocusCapture={keepFocusVisible} className="selection-popover drawing-style-panel" onEscapeKeyDown={retainStyleFieldOnEscape}>
             <DrawingStyle scene={scene} state={state} />
           </PopoverContent></Popover>
           : <Button variant="ghost" size="compact" aria-label={video ? 'Play video' : undefined} aria-keyshortcuts={video ? 'Enter' : undefined} disabled={Boolean(video && state.activeEmbeddable?.state === 'active')} onClick={() => image ? crop(one.id) : startVideo()}>{image ? 'Crop' : 'Play'}</Button>}

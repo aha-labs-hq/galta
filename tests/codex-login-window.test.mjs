@@ -14,7 +14,7 @@ test('sign-in uses one centered popup, preserves the workspace, and closes only 
       calls.push({ method: message.method, params: message.params })
       const result = message.method === 'account/login/start'
         ? { type: 'chatgpt', loginId: 'login-1', authUrl: 'https://auth.openai.com/authorize?state=test' }
-        : message.method === 'config/read' ? compatibleCodexConfig() : {}
+        : message.method === 'galta/config/read' ? { conversationStorage: 'galta' } : message.method === 'config/read' ? compatibleCodexConfig() : {}
       queueMicrotask(() => messages.forEach(listener => listener({ id: message.id, result })))
     }
   }

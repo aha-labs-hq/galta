@@ -192,7 +192,10 @@ capability plugs in through `native/mcp/capability.ts`:
   cannot be used, so it costs no tokens. When availability changes, the
   server sends `notifications/tools/list_changed`; built-in chat reconnects
   when idle after a Generation change in Settings, since Codex fixes its tool list per
-  connection.
+  connection. The media capability watches the containing directory because
+  Settings replaces keys atomically. Event filenames are hints: a rename may
+  report only the temporary file. After coalescing events it re-reads availability
+  and announces only a changed tool list; unrelated job writes stay quiet.
 - **Progressive disclosure and caching.** Always-sent text stays short and
   byte-stable between availability changes: global instructions name no
   capability, each tool has a one-line description and lean schema, and the

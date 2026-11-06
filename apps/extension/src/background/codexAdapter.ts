@@ -6,10 +6,11 @@ import { CODEX_USAGE_UNAVAILABLE, CodexRequestError, connectionFailure, isCodexA
 type JsonRpcResponse = { id?: string | number; result?: unknown; error?: { message?: string; code?: number; data?: unknown } }
 type JsonRpcNotification = { id?: string | number; method: string; params?: Record<string, unknown>; ownerId?: string }
 type Pending = { method: string; resolve: (value: unknown) => void; reject: (error: Error) => void }
-type OwnedTurn = { ownerId: string; id?: string; closing: boolean; interrupting?: boolean }
+type OwnedTurn = { ownerId: string; id?: string; closing: boolean; interrupting?: boolean; deadline?: ReturnType<typeof setTimeout> }
 
 const HOST_NAME = 'com.galta.codex'
-const CONNECTION_REQUESTS = new Set(['initialize', 'config/read', 'account/read', 'model/list', 'account/rateLimits/read', 'account/login/start', 'account/login/cancel'])
+const CONNECTION_REQUESTS = new Set(['initialize', 'config/read', 'galta/config/read', 'account/read', 'model/list', 'account/rateLimits/read', 'account/login/start', 'account/login/cancel'])
+const LIFECYCLE_REQUESTS = new Set(['thread/start', 'thread/resume', 'thread/fork', 'thread/read', 'thread/unsubscribe', 'turn/start', 'turn/interrupt'])
 const MAX_MODEL_LIST_PAGES = 64
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -38,6 +39,9 @@ async function readModelCatalog(request: (method: string, params?: unknown) => P
 }
 
 export class NativeCodexAdapter {
+  constructor(private readonly transport?: Pick<typeof chrome.runtime, 'connectNative' | 'sendMessage' | 'lastError'>) {}
+  private get runtime() { return this.transport ?? chrome.runtime }
+
   private port: chrome.runtime.Port | null = null
   private ready: Promise<void> | null = null
   private nextId = 1
@@ -138,6 +142,7 @@ export class NativeCodexAdapter {
     this.ready = null
     this.decoder.reset()
     this.staleMessage = null
+    for (const turn of this.turns.values()) clearTimeout(turn.deadline)
     this.turns.clear()
     this.serverRequests.clear()
     for (const pending of this.pending.values()) pending.reject(new Error(message))
@@ -150,7 +155,7 @@ export class NativeCodexAdapter {
   private async initialize(): Promise<void> {
     let port: chrome.runtime.Port
     try {
-      port = chrome.runtime.connectNative(HOST_NAME)
+      port = this.runtime.connectNative(HOST_NAME)
     } catch (error) {
       throw new Error(`Galta runtime is unavailable. Open Galta for Mac and choose “Connect browser”. ${errorMessage(error, 'The local runtime could not start.')}`)
     }
@@ -165,7 +170,7 @@ export class NativeCodexAdapter {
       }
     })
     port.onDisconnect.addListener(() => {
-      this.disconnect(port, chrome.runtime.lastError?.message ?? 'Built-in chat disconnected.')
+      this.disconnect(port, this.runtime.lastError?.message ?? 'Built-in chat disconnected.')
     })
     try {
       await this.send('initialize', {
@@ -176,6 +181,9 @@ export class NativeCodexAdapter {
       })
       port.postMessage({ method: 'initialized', params: {} })
       assertCodexEmbeddedConfig(await this.send('config/read', { includeLayers: false }))
+      if (asRecord(await this.send('galta/config/read'))?.conversationStorage !== 'galta') {
+        throw new Error('Update Galta for Mac and reconnect to keep your conversations in Galta.')
+      }
     } catch (error) {
       this.disconnect(port, errorMessage(error, 'Unable to initialize Codex'))
       throw error
@@ -192,7 +200,7 @@ export class NativeCodexAdapter {
         return
       }
       this.serverRequests.set(String(message.id), { id: message.id, ownerId })
-      void chrome.runtime.sendMessage({ type: 'codex-notification', notification: { ...message, ownerId } }).catch(() => this.releaseOwner(ownerId))
+      void this.runtime.sendMessage({ type: 'codex-notification', notification: { ...message, ownerId } }).catch(() => this.releaseOwner(ownerId))
       return
     }
     if ('id' in message && message.id !== undefined) {
@@ -213,6 +221,7 @@ export class NativeCodexAdapter {
         this.observeTurnStart(threadId, turn.id)
       }
       if (notification.method === 'turn/completed' && typeof threadId === 'string' && typeof turn?.id === 'string' && this.turns.get(threadId)?.id === turn.id) {
+        clearTimeout(this.turns.get(threadId)?.deadline)
         this.turns.delete(threadId)
         this.retireIfUnused()
       }
@@ -225,7 +234,7 @@ export class NativeCodexAdapter {
         }
       }
       for (const listener of this.listeners) listener(notification)
-      void chrome.runtime.sendMessage({ type: 'codex-notification', notification }).catch(() => undefined)
+      void this.runtime.sendMessage({ type: 'codex-notification', notification }).catch(() => undefined)
     }
   }
 
@@ -237,10 +246,29 @@ export class NativeCodexAdapter {
   async requestForOwner(ownerId: string, method: string, params?: unknown): Promise<unknown> {
     const request = asRecord(params)
     const threadId = request?.threadId
+    if (method === 'galta/turn/cancel') {
+      const turn = typeof threadId === 'string' ? this.turns.get(threadId) : undefined
+      if (typeof threadId !== 'string' || !turn || turn.ownerId !== ownerId) throw new Error('This Codex turn is not owned by the requesting task')
+      // Galta owns cancellation before Codex has returned a turn id. Never
+      // forward an incomplete turn/interrupt request to the public protocol.
+      this.beginCancellation(threadId, turn)
+      this.interruptClosedThread(threadId, turn)
+      return {}
+    }
+    // All canvas clients share one app-server subscription. A late cleanup
+    // must not unload a thread that another task is already using.
+    if (method === 'thread/unsubscribe' && typeof threadId === 'string' && this.turns.has(threadId)) throw new Error('This Codex conversation is still running')
     if (method === 'turn/steer') {
       const expectedTurnId = request?.expectedTurnId
       const turn = typeof threadId === 'string' ? this.turns.get(threadId) : undefined
       if (!turn || turn.ownerId !== ownerId || turn.closing || typeof expectedTurnId !== 'string' || turn.id !== expectedTurnId) throw new Error('This Codex turn is not owned by the requesting task')
+      return this.request(method, params)
+    }
+    if (method === 'turn/interrupt') {
+      const turn = typeof threadId === 'string' ? this.turns.get(threadId) : undefined
+      if (typeof threadId !== 'string' || !turn || turn.ownerId !== ownerId || turn.id !== request?.turnId) throw new Error('This Codex turn is not owned by the requesting task')
+      this.beginCancellation(threadId, turn)
+      turn.interrupting = true
       return this.request(method, params)
     }
     if (method !== 'turn/start' || typeof threadId !== 'string') return this.request(method, params)
@@ -253,7 +281,17 @@ export class NativeCodexAdapter {
       if (typeof id === 'string' && this.turns.get(threadId) === turn) this.observeTurnStart(threadId, id)
       return result
     } catch (error) {
-      if (this.turns.get(threadId) === turn) this.turns.delete(threadId)
+      if (this.turns.get(threadId) === turn) {
+        if (error instanceof CodexRequestError && !turn.id) {
+          clearTimeout(turn.deadline)
+          this.turns.delete(threadId)
+        } else {
+          // A lost response is not proof that Codex rejected the turn. Keep
+          // ownership until cancellation completes or the transport is retired.
+          this.beginCancellation(threadId, turn)
+          this.interruptClosedThread(threadId, turn)
+        }
+      }
       this.retireIfUnused()
       throw error
     }
@@ -273,12 +311,23 @@ export class NativeCodexAdapter {
       this.port?.postMessage({ id: request.id, error: { code: -32000, message: 'The canvas was closed' } })
     }
     for (const [threadId, turn] of this.turns) if (turn.ownerId === ownerId) {
-      if (turn.closing) continue
       // Keep ownership until completion. Closing during turn/start must stop
       // the turn when its started notification arrives, and block a new run.
-      turn.closing = true
+      this.beginCancellation(threadId, turn)
       this.interruptClosedThread(threadId, turn)
     }
+  }
+
+  private beginCancellation(threadId: string, turn: OwnedTurn): void {
+    if (turn.closing) return
+    turn.closing = true
+    // An interrupt acknowledgement is not completion. Bound cancellation for
+    // explicit Stop, detached owners, and starts whose response was lost alike.
+    turn.deadline = setTimeout(() => {
+      if (this.port && this.turns.get(threadId) === turn) {
+        this.disconnect(this.port, 'Chat was interrupted. Your saved changes are safe. Send a message to continue.')
+      }
+    }, 10_000)
   }
 
   private observeTurnStart(threadId: string, id: string): void {
@@ -304,7 +353,7 @@ export class NativeCodexAdapter {
     const port = this.port
     if (!port) throw new Error('Built-in chat is unavailable')
     const id = String(this.nextId++)
-    const timeoutMs = CONNECTION_REQUESTS.has(method) ? 15_000 : 0
+    const timeoutMs = CONNECTION_REQUESTS.has(method) ? 15_000 : LIFECYCLE_REQUESTS.has(method) ? 60_000 : 0
     return new Promise((resolve, reject) => {
       const timeout = timeoutMs ? setTimeout(() => {
         const pending = this.pending.get(id)

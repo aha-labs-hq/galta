@@ -1,88 +1,11 @@
 import { storedWorkspace } from '../helpers/stored-workspace'
 import { acceptanceOrigin } from '../../scripts/lib/acceptance'
 import { test, expect, type Page } from '@playwright/test'
-import { installCanvasPort, connectCodex } from '../helpers/canvas-port'
+import { connectCodex } from '../helpers/canvas-port'
+import { controlledCodex } from '../helpers/controlled-codex'
 import { brushBase, brushOperations } from '../helpers/brush-workload'
 import { CANVAS_MESSAGE_LABEL } from '../../packages/canvas/src/message'
 
-// Deterministic native-message fixture for storage races. It does not certify
-// a model/provider; the separate live acceptance exercises actual Codex.
-async function controlledCodex(page: Page) {
-  await page.addInitScript(() => {
-    const w = window as any, listeners = new Set<(message: unknown) => void>()
-    const thread = JSON.parse(sessionStorage.getItem('durability-thread') ?? '{"id":"durability-thread","turns":[]}')
-    const notify = (notification: any) => { for (const listener of listeners) listener({ type: 'codex-notification', notification }) }
-    const finish = (status = 'completed') => {
-      const turn = thread.turns.at(-1)
-      turn.status = status
-      sessionStorage.setItem('durability-thread', JSON.stringify(thread))
-      notify({ method: 'turn/completed', params: { threadId: thread.id, turn } })
-    }
-    w.durability = {
-      active: false, interrupts: 0, connections: 0, calls: [], finish,
-      call(tool: string, args: unknown) {
-        return w.__canvasToolCall(tool, args)
-      },
-      holdSave(mode: string) {
-        const put = IDBObjectStore.prototype.put
-        IDBObjectStore.prototype.put = function(value: any, key?: IDBValidKey) {
-          if (this.name !== 'workspaces' || !Object.values(value?.project?.commits ?? {}).some((commit: any) => commit.source === 'agent')) return put.call(this, value, key!)
-          IDBObjectStore.prototype.put = put
-          const tx = this.transaction
-          if (mode === 'failure') {
-            const aborted = tx.onabort!
-            tx.onabort = event => { w.durability.held = true; w.durability.release = () => aborted.call(tx, event) }
-            throw new DOMException('Agent save test', 'QuotaExceededError')
-          }
-          const complete = tx.oncomplete!
-          tx.oncomplete = event => { w.durability.held = true; w.durability.release = () => complete.call(tx, event) }
-          if (mode === 'activation-failure') IDBObjectStore.prototype.put = function(value: any, key?: IDBValidKey) {
-            if (this.name === 'workspaces' && value?.project?.commits[value.project.headCommitId]?.source === 'agent') {
-              IDBObjectStore.prototype.put = put
-              throw new DOMException('Activation save test', 'QuotaExceededError')
-            }
-            return put.call(this, value, key!)
-          }
-          return put.call(this, value, key!)
-        }
-      }
-    }
-    Object.assign(window, { chrome: { ...(window as any).chrome,
-      windows: { getCurrent: async () => ({ id: 1 }) },
-      storage: {
-        session: { get: async () => ({}) },
-        local: {
-          get: async () => JSON.parse(sessionStorage.getItem('durability-preferences') ?? '{}'),
-          set: async (value: any) => { sessionStorage.setItem('durability-preferences', JSON.stringify({ ...JSON.parse(sessionStorage.getItem('durability-preferences') ?? '{}'), ...value })) }
-        }
-      }, runtime: {
-      onMessage: { addListener: (listener: any) => listeners.add(listener), removeListener: (listener: any) => listeners.delete(listener) },
-      connect: () => ({ onDisconnect: { addListener() {} }, disconnect() {} }),
-      async sendMessage(message: any) {
-        if (message.type === 'codex-connect') { w.durability.connections++; return { ok: true, models: [{ id: 'gpt-5.6-sol', displayName: 'Test model', isDefault: true }] } }
-        if (message.type === 'codex-respond') throw new Error('Unexpected dynamic tool response')
-        if (message.type !== 'codex-rpc') throw new Error(`Unexpected message ${message.type}`)
-        w.durability.calls.push({ method: message.method, params: message.params })
-        let result: any = {}
-        switch (message.method) {
-          case 'galta/config/read': result = { toolContract: (window as any).__galtaToolContract }; break
-          case 'thread/start': case 'thread/resume': case 'thread/read': result = { thread }; break
-          case 'thread/name/set': break
-          case 'turn/start': {
-            w.durability.input = message.params.input
-            const turn = { id: `turn-${thread.turns.length + 1}`, status: 'inProgress', items: [] }
-            thread.turns.push(turn); result = { turn }; w.durability.active = true
-            notify({ method: 'turn/started', params: { threadId: thread.id, turn } }); break
-          }
-          case 'turn/interrupt': w.durability.interrupts++; finish('interrupted'); break
-          default: throw new Error(`Unexpected RPC ${message.method}`)
-        }
-        return { ok: true, result }
-      }
-    } } })
-  })
-  await installCanvasPort(page)
-}
 const workspace = storedWorkspace
 function document(bundle: any) { return bundle.snapshots[bundle.project.headCommitId].document }
 async function draw(page: Page, x: number) {
@@ -106,7 +29,8 @@ test('composer submissions carry unselected drawings, durable per-conversation c
   }
   const finish = async () => {
     await page.evaluate(() => (window as any).durability.finish())
-    await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Stop generation', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Record a request', exact: true })).toBeEnabled()
   }
   await draw(page, 200)
   const first = await submit('What do you think?')
@@ -308,7 +232,8 @@ test('stop during lease preparation saves the instruction and never starts a mod
   await page.getByRole('button', { name: 'Send message', exact: true }).click()
   await page.waitForFunction(() => (window as any).__canvasAcquireHeld)
   await page.getByRole('button', { name: 'Stop generation', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Stop generation', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Record a request', exact: true })).toBeEnabled()
   expect((await workspace(page)).agentSessions.flatMap((session: any) => session.turns)).toEqual(expect.arrayContaining([
     expect.objectContaining({ instruction: 'Preserve this interrupted idea', status: 'stopped' })
   ]))
@@ -321,7 +246,8 @@ test('a new canvas keeps the connection and starts its own native session', asyn
   await page.getByRole('button', { name: 'Send message', exact: true }).click()
   await page.waitForFunction(() => (window as any).durability.active)
   await page.evaluate(() => (window as any).durability.finish())
-  await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Stop generation', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Record a request', exact: true })).toBeEnabled()
   const accountReads = await page.evaluate(() => (window as any).durability.connections)
   await page.getByRole('button', { name: 'Canvas menu', exact: true }).click()
   await page.getByRole('button', { name: 'New canvas', exact: true }).click()
@@ -337,5 +263,45 @@ test('a new canvas keeps the connection and starts its own native session', asyn
   expect(state.calls.some((call: any) => call.method === 'thread/resume')).toBe(false)
   expect(JSON.parse(state.calls.find((call: any) => call.method === 'turn/start').params.additionalContext.canvas.value).projectId).toBe(id)
   await page.evaluate(() => (window as any).durability.finish())
-  await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Stop generation', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Record a request', exact: true })).toBeEnabled()
+})
+
+test('recovering unavailable context retains the canvas, old transcript and editable draft across reload', async ({ page }) => {
+  await controlledCodex(page)
+  await page.goto(`${acceptanceOrigin}/sidepanel/index.html`); await connectCodex(page)
+  await draw(page, 200)
+  const input = page.getByRole('textbox', { name: 'Ask Galta', exact: true })
+  await input.fill('The original conversation')
+  await page.getByRole('button', { name: 'Send message', exact: true }).click()
+  await page.waitForFunction(() => (window as any).durability.active)
+  await page.evaluate(() => (window as any).durability.finish())
+  await expect.poll(async () => (await workspace(page)).agentSessions[0].turns.at(-1).status).toBe('completed')
+  const before = await workspace(page)
+  await page.evaluate(() => sessionStorage.setItem('durability-unavailable', 'true'))
+  await page.reload()
+  const fresh = page.getByRole('button', { name: 'Start a new conversation', exact: true })
+  await expect(fresh).toBeVisible()
+  await input.fill('Keep this idea for the new conversation')
+  await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeDisabled()
+  await fresh.click()
+  await expect(fresh).toHaveCount(0)
+  await expect(input).toHaveValue('Keep this idea for the new conversation')
+  const after = await workspace(page)
+  expect(after.project.headCommitId).toBe(before.project.headCommitId)
+  expect(document(after)).toEqual(document(before))
+  expect(after.agentSessions.find((session: any) => session.id === before.agentSessions[0].id)).toEqual(before.agentSessions[0])
+  expect(after.agentSessions).toHaveLength(2)
+  expect(after.runtimeDefaults.sessionId).not.toBe(before.runtimeDefaults.sessionId)
+  expect(await page.evaluate(() => (window as any).durability.calls.some((call: any) => call.method === 'turn/start'))).toBe(false)
+  await page.reload()
+  await expect(input).toHaveValue('Keep this idea for the new conversation')
+  await page.getByRole('button', { name: 'Send message', exact: true }).click()
+  await page.waitForFunction(() => (window as any).durability.active)
+  const calls = await page.evaluate(() => (window as any).durability.calls)
+  expect(calls.some((call: any) => call.method === 'thread/start')).toBe(true)
+  expect(calls.some((call: any) => call.method === 'thread/resume')).toBe(false)
+  expect(calls.find((call: any) => call.method === 'turn/start').params.input[0].text).toBe('Keep this idea for the new conversation')
+  await page.evaluate(() => (window as any).durability.finish())
+  await expect.poll(async () => (await workspace(page)).agentSessions.find((session: any) => session.id === after.runtimeDefaults.sessionId)?.turns.at(-1)?.status).toBe('completed')
 })

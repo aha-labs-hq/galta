@@ -21,6 +21,8 @@ ${CANVAS_WORKING_INSTRUCTIONS}
 
 ${CANVAS_LOOKING_INSTRUCTIONS}
 
+When a missing user choice materially affects the work, use request_user_input with concise options and room for a custom answer. Do not emulate an interactive question with a Markdown list and a sleeping tool call. This is for missing information, not permission to do already authorized work.
+
 Keep commentary brief and useful and give a normal conversational final response. Do not disable Chromium's own sandbox. Close browsers you launch in finally.`
   ].join('\n\n')
 }

@@ -24,6 +24,7 @@ export default defineConfig(({ mode }) => {
   const outDir = mode === 'development' ? 'dist' : 'release'
   const define = {
     'process.env.IS_PREACT': 'false',
+    __GALTA_WEB_APP__: JSON.stringify(process.env.GALTA_WEB_APP === '1'),
     __GALTA_BUILD__: JSON.stringify({ mode, source: sourceDigest(), companion: process.env.GALTA_COMPANION_URL ?? '' }),
     __GALTA_COMPANION_URL__: JSON.stringify(process.env.GALTA_COMPANION_URL ?? '')
   }
@@ -31,6 +32,11 @@ export default defineConfig(({ mode }) => {
   plugins: [react(), tailwindcss(), {
     name: 'excalidraw-local-fonts',
     configureServer(server) {
+      if (process.env.GALTA_WEB_APP === '1') server.middlewares.use('/__galta/session', (req, res) => {
+        if (req.headers.host !== process.env.GALTA_WEB_HOST || req.headers['x-galta-web'] !== '1' || req.method !== 'GET' || req.headers.origin && req.headers.origin !== `http://${process.env.GALTA_WEB_HOST}`) { res.statusCode = 403; res.end(); return }
+        res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store')
+        res.end(JSON.stringify({ endpoint: process.env.GALTA_WEB_SOCKET, token: process.env.GALTA_WEB_TOKEN }))
+      })
       server.middlewares.use('/fonts', (req, res, next) => {
         const root = resolve('node_modules/@excalidraw/excalidraw/dist/prod/fonts')
         const file = resolve(root, `.${decodeURIComponent(req.url?.split('?')[0] ?? '/')}`)

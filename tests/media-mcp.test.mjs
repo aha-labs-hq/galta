@@ -84,10 +84,36 @@ test('generation costs no context until a provider is connected, and the tool li
     await generation.keys.connect(generation.providers.openrouter, KEY)
     expect(await announced(before)).toBe(true)
     expect(await names()).toContain('generate_speech')
+    // Directory events are invalidations, not proof of changed availability.
+    // Job writes and replacing an already connected key must stay quiet.
+    before = changed
+    await writeFile(join(directory, 'job.json'), '{}')
+    await generation.keys.connect(generation.providers.openrouter, KEY)
+    await Bun.sleep(300)
+    expect(changed).toBe(before)
     await generation.keys.disconnect('byteplus'); await generation.keys.disconnect('openrouter')
+    expect(await announced(before)).toBe(true)
     expect(await names()).toEqual([])
   } finally {
     await client.close(); await server.close(); generation.close()
     await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('closing a capability cancels a pending availability notification', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'galta-media-unwatch-'))
+  const fixture = providerFixture(), generation = new MediaGeneration(directory, fixture.fetch)
+  const capability = mediaCapability({ directory, generation })
+  let changed = 0
+  const stop = capability.watch(() => { changed++ })
+  try {
+    expect(await capability.tools()).toEqual([])
+    await generation.keys.connect(generation.providers.byteplus, KEY)
+    stop()
+    await Bun.sleep(300)
+    expect(changed).toBe(0)
+  } finally {
+    stop(); generation.close()
+    await rm(directory, { recursive: true, force: true })
   }
 })

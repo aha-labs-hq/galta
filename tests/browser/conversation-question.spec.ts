@@ -1,0 +1,77 @@
+import { test, expect, type Page } from '@playwright/test'
+
+const questions = [{ id: 'lead', header: 'Character', question: 'Who should be the main character?', options: [
+  { label: 'Arthur Morgan', description: 'Use the character from the reference.' },
+  { label: 'An original cowboy', description: 'Design a new character for this scene.' }
+] }]
+const ask = (page: Page, value = questions, fail = false) => page.evaluate(({ value, fail }) => (window as any).__conversationTest.ask(value, fail), { value, fail })
+const answers = (page: Page) => page.evaluate(() => (window as any).__conversationTest.answers)
+
+test('closed choices answer once without opening the conversation or consuming its draft', async ({ page }, info) => {
+  await page.goto('/dev/conversation-test.html')
+  await page.getByRole('textbox', { name: 'Ask Galta', exact: true }).fill('Keep my next idea.')
+  await ask(page)
+  await expect(page.locator('.conversation-dock')).toHaveAttribute('data-open', 'false')
+  const choice = page.getByRole('button', { name: 'Arthur Morgan', exact: true })
+  await expect(choice).toBeVisible()
+  await expect(page.getByText('Use the character from the reference.', { exact: true })).not.toBeVisible()
+  await page.locator('.conversation-dock').screenshot({ path: info.outputPath('question-closed.png'), animations: 'disabled' })
+  await choice.dblclick({ delay: 10 })
+  await expect(page.getByRole('textbox', { name: 'Ask Galta', exact: true })).toHaveValue('Keep my next idea.')
+  expect(await answers(page)).toEqual([{ answers: { lead: { answers: ['Arthur Morgan'] } } }])
+  await expect(page.locator('.conversation-dock')).toHaveAttribute('data-open', 'false')
+})
+
+test('expanded questions show descriptions and preserve a custom answer across collapse, IME and failed acknowledgement', async ({ page }, info) => {
+  await page.setViewportSize({ width: 360, height: 740 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/dev/conversation-test.html')
+  await ask(page, questions, true)
+  const input = page.getByRole('textbox', { name: 'Your answer', exact: true })
+  await input.fill('A woman from the frontier')
+  await page.getByRole('button', { name: 'Open conversation', exact: true }).click()
+  await expect(page.getByText('Design a new character for this scene.', { exact: true })).toBeVisible()
+  await expect(input).toHaveValue('A woman from the frontier')
+  await page.locator('.conversation-dock').screenshot({ path: info.outputPath('question-open-narrow.png'), animations: 'disabled' })
+  expect(await page.locator('.conversation-dock').evaluate(e => e.scrollWidth <= e.clientWidth)).toBe(true)
+  await page.getByRole('button', { name: 'Conversation open', exact: true }).click()
+  await input.dispatchEvent('keydown', { key: 'Enter', isComposing: true })
+  expect(await answers(page)).toEqual([])
+  await input.press('Enter')
+  await expect(page.getByRole('alert')).toContainText('The connection closed. Try again.')
+  await expect(input).toHaveValue('A woman from the frontier')
+  await input.press('Enter')
+  await expect(page.getByRole('textbox', { name: 'Ask Galta', exact: true })).toBeVisible()
+  expect(await answers(page)).toEqual(Array(2).fill({ answers: { lead: { answers: ['A woman from the frontier'] } } }))
+})
+
+test('multiple questions advance explicitly, allow revision, and send one complete answer', async ({ page }) => {
+  await page.goto('/dev/conversation-test.html')
+  await ask(page, [...questions, { id: 'mood', header: 'Mood', question: 'What time of day?', options: [{ label: 'Dusk', description: 'Low light.' }] }])
+  await page.getByRole('button', { name: 'Arthur Morgan', exact: true }).click()
+  expect(await answers(page)).toEqual([])
+  await expect(page.getByText('2 of 2', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Previous question', exact: true }).click()
+  await page.getByRole('button', { name: 'An original cowboy', exact: true }).click()
+  await page.getByRole('button', { name: 'Dusk', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('textbox', { name: 'Ask Galta', exact: true })).toBeVisible()
+  expect(await answers(page)).toEqual([{ answers: { lead: { answers: ['An original cowboy'] }, mood: { answers: ['Dusk'] } } }])
+})
+
+test('an old failed acknowledgement cannot replace a newer question or its answer', async ({ page }) => {
+  await page.goto('/dev/conversation-test.html')
+  await ask(page, questions, true)
+  await page.getByRole('button', { name: 'Arthur Morgan', exact: true }).click()
+  await ask(page, [{ id: 'new', header: 'Direction', question: 'Where should the character look?', options: [] }])
+  const input = page.getByRole('textbox', { name: 'Your answer', exact: true })
+  await input.fill('Towards the camera')
+  await expect.poll(() => page.evaluate(() => (window as any).__conversationTest.failedAnswers.length)).toBe(1)
+  await page.getByRole('button', { name: 'Open conversation', exact: true }).click()
+  await expect(page.getByText('Where should the character look?', { exact: true })).toBeVisible()
+  await expect(input).toHaveValue('Towards the camera')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await input.press('Enter')
+  await expect(page.getByRole('textbox', { name: 'Ask Galta', exact: true })).toBeVisible()
+  expect(await answers(page)).toEqual([{ answers: { lead: { answers: ['Arthur Morgan'] } } }, { answers: { new: { answers: ['Towards the camera'] } } }])
+})
